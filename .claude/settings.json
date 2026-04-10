@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx expo:*)",
+      "Bash(npx kill-port:*)",
+      "Bash(taskkill //F //IM \"node.exe\" //FI \"WINDOWTITLE eq Metro\")",
+      "Bash(lsof -ti:8081)",
+      "Bash(xargs kill:*)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\bferg\\crusader9\\src\\app\\api\\mobile"
+    ]
+  }
+}
