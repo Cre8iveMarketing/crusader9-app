@@ -6,10 +6,40 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "splash": { "image": "./assets/splash.png", "resizeMode": "contain", "backgroundColor": "#0a0a0a" },
-    "ios": { "supportsTablet": false, "bundleIdentifier": "co.uk.crusader9.app" },
-    "android": { "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#0a0a0a" }, "package": "co.uk.crusader9.app" },
-    "plugins": ["expo-router", "expo-secure-store", ["expo-notifications", { "icon": "./assets/icon.png", "color": "#c8a84b" }]],
-    "scheme": "crusader9"
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "co.uk.crusader9.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a0a"
+      },
+      "package": "co.uk.crusader9.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#c8a84b"
+        }
+      ]
+    ],
+    "scheme": "crusader9",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6e01da50-f7de-4634-873b-b257b0c1fe31"
+      }
+    },
+    "owner": "cre8ivemarketing"
   }
 }
