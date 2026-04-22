@@ -13,7 +13,6 @@
     "@stripe/stripe-react-native": "0.50.3",
     "date-fns": "^4.1.0",
     "expo": "~54.0.33",
-    "expo-barcode-scanner": "^13.0.1",
     "expo-constants": "~18.0.13",
     "expo-dev-client": "~6.0.20",
     "expo-file-system": "~19.0.21",
@@ -34,7 +33,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
-    "babel-preset-expo": "^55.0.18",
+    "babel-preset-expo": "~54.0.10",
     "typescript": "~5.9.2"
   },
   "private": true
