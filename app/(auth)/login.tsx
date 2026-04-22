@@ -1,67 +1,131 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ImageBackground, Image, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { saveToken } from '@/lib/auth';
 import { useAuth } from '@/context/AuthContext';
-import { Colors } from '@/constants/colors';
-import { SvgXml } from 'react-native-svg';
-
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 218.75 200"><polygon fill="#fff" points="105.64 134.51 74.71 125.58 71.8 124.75 71.8 148.87 52.56 165.03 33.32 148.87 33.32 51.14 52.56 34.91 71.8 51.14 71.8 75.2 74.71 74.37 105.64 65.5 105.64 38.66 98.97 33.81 52.56 .03 41.94 7.77 33.29 14.07 0 38.35 0 161.6 33.29 185.93 41.69 192.05 52.56 200 98.92 166.18 105.64 161.28 105.64 134.51"/><path fill="#fff" d="M218.75,38.35l-33.3-24.13-8.7-6.31-10.92-7.91-45.59,33.03-7.45,5.4v62.24l31.24,15.62,21.79,10.9,19.22-15.97v37.63l-19.22,16.23-19.22-16.23v-24.1l-2.58.72-31.24,8.76v27.06l7.13,5.21,45.91,33.48,10.83-7.9,8.8-6.42,33.3-24.29V38.35ZM185.04,77.94l-19.22,12.98-19.22-9.46v-30.3l19.22-16.24,19.22,16.24v26.78Z"/></svg>`;
 
 export default function Login() {
-  const { login } = useAuth();
   const router = useRouter();
+  const { refresh } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function handleLogin() {
-    if (!email || !password) { Alert.alert('Error', 'Please enter your email and password'); return; }
+    if (!email.trim() || !password) { Alert.alert('Required', 'Please enter your email and password'); return; }
     setLoading(true);
     try {
-      await login(email.trim().toLowerCase(), password);
-      router.replace('/(tabs)');
-    } catch (e: any) {
-      Alert.alert('Login Failed', e.message ?? 'Invalid email or password');
-    } finally { setLoading(false); }
+      const res = await fetch('https://app.crusader9.co.uk/api/mobile/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      });
+      const data = await res.json();
+      if (!res.ok) { Alert.alert('Sign in failed', data.error ?? 'Invalid email or password'); return; }
+      await saveToken(data.token);
+      await refresh();
+      router.replace('/(tabs)/');
+    } catch { Alert.alert('Error', 'Could not connect. Please check your connection.'); }
+    finally { setLoading(false); }
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: Colors.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView contentContainerStyle={s.container}>
-        <View style={s.logoRow}>
-          <SvgXml xml={LOGO_SVG} width={36} height={36} />
-          <Text style={s.logoText}>CRUSADER 9</Text>
-        </View>
-        <Text style={s.title}>Welcome back</Text>
-        <Text style={s.subtitle}>Sign in to your membership</Text>
-        <View style={s.form}>
-          <TextInput style={s.input} placeholder="Email address" placeholderTextColor={Colors.textFaint}
-            value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
-          <TextInput style={s.input} placeholder="Password" placeholderTextColor={Colors.textFaint}
-            value={password} onChangeText={setPassword} secureTextEntry />
-          <TouchableOpacity style={[s.button, loading && s.buttonDisabled]} onPress={handleLogin} disabled={loading}>
-            <Text style={s.buttonText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.back()} style={s.back}>
-            <Text style={s.backText}>← Back</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    <ImageBackground
+      source={require('../../assets/login-bg.jpg')}
+      style={s.bg}
+      resizeMode="cover">
+      {/* Dark overlay */}
+      <View style={s.overlay} />
+      <SafeAreaView style={s.safe}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.kav}>
+
+          {/* Centred login card */}
+          <View style={s.card}>
+            {/* C9 logo text */}
+            <Image
+              source={require('../../assets/c9-logo.png')}
+              style={s.logoImage}
+              resizeMode="contain"
+            />
+            <Text style={s.logoSub}>MEMBER PORTAL</Text>
+
+            {/* Fields */}
+            <View style={s.fields}>
+              <Text style={s.label}>Email</Text>
+              <TextInput
+                style={s.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                placeholderTextColor="#8e8e93"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <View style={s.passwordHeader}>
+                <Text style={s.label}>Password</Text>
+                <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')}>
+                  <Text style={s.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={s.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Enter your password"
+                placeholderTextColor="#8e8e93"
+                secureTextEntry
+                onSubmitEditing={handleLogin}
+                returnKeyType="go"
+              />
+            </View>
+
+            <TouchableOpacity style={[s.signInBtn, loading && { opacity: 0.7 }]} onPress={handleLogin} disabled={loading} activeOpacity={0.85}>
+              {loading
+                ? <ActivityIndicator color="#000" size="small" />
+                : <Text style={s.signInBtnText}>Sign in</Text>
+              }
+            </TouchableOpacity>
+          </View>
+
+          {/* Not a member CTA */}
+          <View style={s.footer}>
+            <Text style={s.footerText}>New to Crusader 9?</Text>
+            <View style={s.footerBtns}>
+              <TouchableOpacity style={s.footerBtn} onPress={() => router.push('/(auth)/register')}>
+                <Text style={s.footerBtnText}>Become a member</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.footerBtn} onPress={() => router.push('/(auth)/plans')}>
+                <Text style={s.footerBtnText}>Membership Options</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flexGrow: 1, padding: 28, justifyContent: 'center' },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 32 },
-  logoText: { color: Colors.white, fontSize: 18, fontWeight: '800', letterSpacing: 3 },
-  title: { fontSize: 28, fontWeight: '800', color: Colors.text, marginBottom: 6 },
-  subtitle: { fontSize: 14, color: Colors.textMuted, marginBottom: 32 },
-  form: { gap: 12 },
-  input: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, padding: 14, color: Colors.text, fontSize: 15 },
-  button: { backgroundColor: Colors.white, padding: 16, borderRadius: 10, alignItems: 'center', marginTop: 4 },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: Colors.bg, fontSize: 15, fontWeight: '700' },
-  back: { alignItems: 'center', padding: 10 },
-  backText: { color: Colors.textMuted, fontSize: 14 },
+  bg: { flex: 1 },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.72)' },
+  safe: { flex: 1 },
+  kav: { flex: 1, justifyContent: 'center', padding: 24, gap: 20 },
+  card: { backgroundColor: 'rgba(18,18,18,0.85)', borderRadius: 20, padding: 28, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: 20 },
+  logoImage: { width: 200, height: 100, alignSelf: 'center' },
+  logoSub: { textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#8e8e93', letterSpacing: 3 },
+  fields: { gap: 6 },
+  label: { fontSize: 12, color: '#a1a1aa', marginBottom: 4 },
+  passwordHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
+  forgotText: { fontSize: 12, color: '#a1a1aa' },
+  input: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 10, padding: 14, color: '#fff', fontSize: 15 },
+  signInBtn: { backgroundColor: '#fff', padding: 16, borderRadius: 12, alignItems: 'center' },
+  signInBtnText: { color: '#0a0a0a', fontWeight: '800', fontSize: 16 },
+  footer: { backgroundColor: 'rgba(18,18,18,0.75)', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', gap: 12, alignItems: 'center' },
+  footerText: { color: '#a1a1aa', fontSize: 14 },
+  footerBtns: { flexDirection: 'row', gap: 10, width: '100%' },
+  footerBtn: { flex: 1, minHeight: 56, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 13, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  footerBtnText: { color: '#fff', fontWeight: '600', fontSize: 14, textAlign: 'center' },
 });

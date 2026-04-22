@@ -28,6 +28,18 @@ export async function apiDelete(path: string) {
   return apiFetch(path, { method: 'DELETE' });
 }
 
+export async function apiPatch(path: string, body: any) {
+  const token = await getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? 'Request failed');
+  return data;
+}
+
 export async function apiPublicFetch(path: string) {
   const res = await fetch(`${API_BASE}${path}`);
   if (!res.ok) {

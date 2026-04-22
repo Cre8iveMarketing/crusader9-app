@@ -1,44 +1,121 @@
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Colors } from '@/constants/colors';
-import { SvgXml } from 'react-native-svg';
-
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 218.75 200">
-  <g>
-    <polygon fill="#fff" points="105.64 134.51 74.71 125.58 71.8 124.75 71.8 148.87 52.56 165.03 33.32 148.87 33.32 51.14 52.56 34.91 71.8 51.14 71.8 75.2 74.71 74.37 105.64 65.5 105.64 38.66 98.97 33.81 52.56 .03 41.94 7.77 33.29 14.07 0 38.35 0 161.6 33.29 185.93 41.69 192.05 52.56 200 98.92 166.18 105.64 161.28 105.64 134.51"/>
-    <path fill="#fff" d="M218.75,38.35l-33.3-24.13-8.7-6.31-10.92-7.91-45.59,33.03-7.45,5.4v62.24l31.24,15.62,21.79,10.9,19.22-15.97v37.63l-19.22,16.23-19.22-16.23v-24.1l-2.58.72-31.24,8.76v27.06l7.13,5.21,45.91,33.48,10.83-7.9,8.8-6.42,33.3-24.29V38.35ZM185.04,77.94l-19.22,12.98-19.22-9.46v-30.3l19.22-16.24,19.22,16.24v26.78Z"/>
-  </g>
-</svg>`;
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useEffect, useState } from 'react';
 
 export default function Welcome() {
   const router = useRouter();
+  const [plans, setPlans] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('https://app.crusader9.co.uk/api/plans')
+      .then(r => r.json())
+      .then(d => {
+        const list = Array.isArray(d) ? d : (d.plans ?? []);
+        setPlans(list.filter((p: any) => p.planType !== 'DAY_PASS'));
+      })
+      .catch(() => {});
+  }, []);
+
+  const monthlyPlans = plans.filter(p => p.planType === 'MONTHLY');
+  const paygPlan = plans.find(p => p.planType === 'PAYG');
+  const mostPopular = monthlyPlans.find(p => p.name.toLowerCase().includes('coach') || p.name.toLowerCase().includes('class')) ?? monthlyPlans[0];
+
   return (
-    <View style={s.container}>
-      <View style={s.hero}>
-        <SvgXml xml={LOGO_SVG} width={80} height={80} />
-        <Text style={s.title}>CRUSADER 9</Text>
-        <Text style={s.subtitle}>Boxing & Fitness</Text>
-      </View>
-      <View style={s.buttons}>
-        <TouchableOpacity style={s.primary} onPress={() => router.push('/(auth)/login')}>
-          <Text style={s.primaryText}>Member Login</Text>
+    <SafeAreaView style={s.container}>
+      <ScrollView contentContainerStyle={s.content}>
+        {/* Logo */}
+        <View style={s.logoRow}>
+          <Image source={require('../../assets/c9-logo.png')} style={s.logoImage} resizeMode="contain" />
+        </View>
+
+        {/* Hero */}
+        <View style={s.hero}>
+          <Text style={s.heroTitle}>Train harder.{'\n'}Join today.</Text>
+          <Text style={s.heroSub}>Open gym, coach-led classes, and personal training at Crusader 9 Boxing.</Text>
+        </View>
+
+        {/* CTAs */}
+        <TouchableOpacity style={s.primaryBtn} onPress={() => router.push({ pathname: '/(auth)/register', params: { path: 'member' } })}>
+          <Text style={s.primaryBtnText}>Become a member</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={s.secondary} onPress={() => router.push('/(auth)/plans')}>
-          <Text style={s.secondaryText}>Join Now</Text>
+        <View style={s.secondaryRow}>
+          <TouchableOpacity style={s.secondaryBtn} onPress={() => router.push({ pathname: '/(auth)/register', params: { path: 'class' } })}>
+            <Text style={s.secondaryBtnText}>Book a class</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.secondaryBtn} onPress={() => router.push({ pathname: '/(auth)/register', params: { path: 'daypass' } })}>
+            <Text style={s.secondaryBtnText}>Day pass — £7.50</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Plan cards */}
+        {plans.length > 0 && (
+          <View style={s.plansSection}>
+            <Text style={s.plansLabel}>MEMBERSHIP PLANS</Text>
+            {[...monthlyPlans, paygPlan].filter(Boolean).map((p: any) => (
+              <TouchableOpacity key={p.id}
+                style={[s.planCard, p.id === mostPopular?.id && s.planCardPopular]}
+                onPress={() => router.push({ pathname: '/(auth)/register', params: { path: 'member', planId: p.id } })}
+                activeOpacity={0.8}>
+                {p.id === mostPopular?.id && (
+                  <View style={s.popularBadge}><Text style={s.popularBadgeText}>Most popular</Text></View>
+                )}
+                <View style={s.planCardRow}>
+                  <Text style={s.planCardName}>{p.name}</Text>
+                  <Text style={s.planCardPrice}>
+                    {p.price === 0 ? 'Free' : `£${p.price}`}
+                    {p.price > 0 && <Text style={s.planCardPer}>/mo</Text>}
+                  </Text>
+                </View>
+                {p.description && <Text style={s.planCardDesc} numberOfLines={2}>{p.description}</Text>}
+                <View style={[s.planCardBtn, p.planType === 'PAYG' && s.planCardBtnPayg]}>
+                  <Text style={[s.planCardBtnText, p.planType === 'PAYG' && s.planCardBtnTextPayg]}>
+                    {p.planType === 'PAYG' ? 'Join free' : 'Get started'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {/* Sign in link */}
+        <TouchableOpacity style={s.signInRow} onPress={() => router.push('/(auth)/login')}>
+          <Text style={s.signInText}>Already a member? <Text style={s.signInLink}>Sign in →</Text></Text>
         </TouchableOpacity>
-      </View>
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg, justifyContent: 'space-between', padding: 32 },
-  hero: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  title: { fontSize: 36, fontWeight: '900', color: Colors.white, letterSpacing: 6 },
-  subtitle: { fontSize: 14, color: Colors.textMuted, letterSpacing: 3 },
-  buttons: { gap: 12, paddingBottom: 24 },
-  primary: { backgroundColor: Colors.white, padding: 16, borderRadius: 10, alignItems: 'center' },
-  primaryText: { color: Colors.bg, fontSize: 15, fontWeight: '700' },
-  secondary: { backgroundColor: Colors.surface, padding: 16, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
-  secondaryText: { color: Colors.text, fontSize: 15, fontWeight: '600' },
+  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  content: { padding: 24, paddingBottom: 48 },
+  logoRow: { alignItems: 'center', marginBottom: 32 },
+  logoImage: { width: 80, height: 80 },
+  hero: { marginBottom: 28, gap: 10 },
+  heroTitle: { fontSize: 38, fontWeight: '900', color: '#fff', letterSpacing: -1, lineHeight: 44 },
+  heroSub: { fontSize: 15, color: '#a1a1aa', lineHeight: 22 },
+  primaryBtn: { backgroundColor: '#fff', padding: 16, borderRadius: 12, alignItems: 'center', marginBottom: 10 },
+  primaryBtnText: { color: '#0a0a0a', fontWeight: '700', fontSize: 16 },
+  secondaryRow: { flexDirection: 'row', gap: 10, marginBottom: 40 },
+  secondaryBtn: { flex: 1, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a', padding: 14, borderRadius: 12, alignItems: 'center' },
+  secondaryBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  plansSection: { gap: 12, marginBottom: 32 },
+  plansLabel: { fontSize: 11, fontWeight: '700', color: '#a1a1aa', letterSpacing: 1 },
+  planCard: { backgroundColor: '#1a1a1a', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#2a2a2a', gap: 8 },
+  planCardPopular: { borderColor: '#fff', borderWidth: 1.5 },
+  popularBadge: { position: 'absolute', top: -12, alignSelf: 'center', backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, zIndex: 1 },
+  popularBadgeText: { color: '#0a0a0a', fontSize: 11, fontWeight: '700' },
+  planCardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  planCardName: { fontSize: 16, fontWeight: '700', color: '#fff', flex: 1 },
+  planCardPrice: { fontSize: 26, fontWeight: '800', color: '#fff' },
+  planCardPer: { fontSize: 14, fontWeight: '400', color: '#a1a1aa' },
+  planCardDesc: { fontSize: 12, color: '#a1a1aa', lineHeight: 17 },
+  planCardBtn: { backgroundColor: '#fff', padding: 12, borderRadius: 10, alignItems: 'center', marginTop: 4 },
+  planCardBtnPayg: { backgroundColor: '#2a2a2a', borderWidth: 1, borderColor: '#3f3f46' },
+  planCardBtnText: { color: '#0a0a0a', fontWeight: '700', fontSize: 14 },
+  planCardBtnTextPayg: { color: '#fff' },
+  signInRow: { alignItems: 'center', paddingVertical: 8 },
+  signInText: { color: '#a1a1aa', fontSize: 14 },
+  signInLink: { color: '#fff', fontWeight: '600' },
 });

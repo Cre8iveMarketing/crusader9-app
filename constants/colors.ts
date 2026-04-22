@@ -8,8 +8,8 @@ export const Colors = {
 
   // Text
   text: '#f4f4f5',
-  textMuted: '#71717a',
-  textFaint: '#52525b',
+  textMuted: '#a1a1aa',
+  textFaint: '#8e8e93',
   textSub: '#a1a1aa',
 
   // Accents

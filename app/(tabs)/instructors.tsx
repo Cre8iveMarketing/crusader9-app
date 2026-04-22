@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal, Image } from 'react-native';
 import { apiFetch, apiPost } from '@/lib/api';
 import { Colors } from '@/constants/colors';
 import { format, addDays } from 'date-fns';
@@ -19,6 +19,10 @@ export default function Instructors() {
   const [slots, setSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [booking, setBooking] = useState(false);
+  const [upcomingPt, setUpcomingPt] = useState<any[]>([]);
+  const [family, setFamily] = useState<any[]>([]);
+  const [ptModal, setPtModal] = useState<{ context: any; candidates: any[] } | null>(null);
+  const [ptSelectedCandidate, setPtSelectedCandidate] = useState<string | null>(null);
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const dates = Array.from({ length: 14 }, (_, i) => {
@@ -28,6 +32,19 @@ export default function Instructors() {
 
   useEffect(() => {
     apiFetch('/instructors').then(d => setInstructors(Array.isArray(d) ? d : [])).finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    apiFetch('/pt-bookings').then(d => {
+      const upcoming = (Array.isArray(d) ? d : [])
+        .filter((b: any) => new Date(b.startsAt) >= new Date() && b.status !== 'CANCELLED')
+        .sort((a: any, b: any) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+      setUpcomingPt(upcoming);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    apiFetch('/family').then(d => setFamily(d.children ?? [])).catch(() => {});
   }, []);
 
   async function selectInstructor(inst: any) {
@@ -76,6 +93,23 @@ export default function Instructors() {
 
   async function requestBooking() {
     if (!selectedDate || !selectedTime) { Alert.alert('Required', 'Please select a date and time'); return; }
+
+    // If parent has children, show who's this for modal
+    if (family.length > 0 && detail) {
+      const sessionPrice = duration === 30 && detail?.rate30Min > 0 ? detail.rate30Min : detail?.hourlyRate;
+      const candidates = [
+        { id: 'self', firstName: detail.selfFirstName ?? 'You', lastName: '', image: null, isSelf: true, dateOfBirth: null },
+        ...family.map((c: any) => ({ id: c.id, firstName: c.firstName, lastName: c.lastName, image: c.image, isSelf: false, dateOfBirth: c.dateOfBirth })),
+      ];
+      setPtModal({ context: { instructorName: `${selected.firstName} ${selected.lastName}`, startsAt: `${selectedDate}T${selectedTime}:00`, durationMins: duration, price: sessionPrice }, candidates });
+      setPtSelectedCandidate(null);
+      return;
+    }
+
+    await proceedWithPtBooking(null);
+  }
+
+  async function proceedWithPtBooking(forMemberId: string | null) {
     setBooking(true);
     try {
       const startsAt = `${selectedDate}T${selectedTime}:00`;
@@ -83,7 +117,8 @@ export default function Instructors() {
         instructorId: selected.id,
         startsAt,
         durationMins: duration,
-        notes: ''
+        notes: '',
+        ...(forMemberId && { forMemberId }),
       });
       const price = duration === 30 && detail?.rate30Min > 0 ? detail.rate30Min : detail?.hourlyRate;
       if (price > 0) {
@@ -102,13 +137,20 @@ export default function Instructors() {
           ptBookingId: res.id,
         });
         Alert.alert('Booked!', 'Your PT session has been booked and paid.');
-        setSelected(null); setDetail(null); setSelectedDate(''); setSelectedTime(''); setSlots([]);
       } else {
-        Alert.alert('Request Sent!', 'Your PT session request has been sent. The instructor will confirm shortly.');
-        setSelected(null); setDetail(null); setSelectedDate(''); setSelectedTime(''); setSlots([]);
+        Alert.alert('Request Sent!', 'Your PT session request has been sent.');
       }
+      setSelected(null); setDetail(null); setSelectedDate(''); setSelectedTime(''); setSlots([]);
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setBooking(false); }
+  }
+
+  async function handlePtModalConfirm() {
+    if (!ptSelectedCandidate) return;
+    const candidate = ptModal?.candidates.find((c: any) => c.id === ptSelectedCandidate);
+    const forMemberId = candidate?.isSelf ? null : ptSelectedCandidate;
+    setPtModal(null);
+    await proceedWithPtBooking(forMemberId);
   }
 
   function getEndTime(startTime: string, durationMins: number): string {
@@ -137,6 +179,29 @@ export default function Instructors() {
           <View style={s.bookLinkRow}><Text style={s.bookLinkText}>Book a session →</Text></View>
         </TouchableOpacity>
       ))}
+      {upcomingPt.length > 0 && (
+        <View style={{ marginTop: 8, gap: 10 }}>
+          <Text style={s.upcomingLabel}>UPCOMING PT SESSIONS</Text>
+          {upcomingPt.map((b: any) => (
+            <View key={b.id} style={s.upcomingCard}>
+              <View style={[s.upcomingBar, { backgroundColor: '#8b5cf6' }]} />
+              <View style={s.upcomingInfo}>
+                <Text style={s.upcomingName}>{b.instructor?.firstName} {b.instructor?.lastName}</Text>
+                <Text style={s.upcomingMeta}>
+                  {new Date(b.startsAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' })}
+                  {' · '}
+                  {new Date(b.startsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}
+                  {'–'}
+                  {new Date(b.endsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}
+                </Text>
+                <View style={[s.upcomingBadge, b.status === 'CONFIRMED' ? s.upcomingBadgeGreen : s.upcomingBadgeAmber]}>
+                  <Text style={s.upcomingBadgeText}>{b.status}</Text>
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
     </ScrollView>
   );
 
@@ -239,6 +304,54 @@ export default function Instructors() {
           })()}
         </>
       )}
+
+      {/* Who's this PT session for? Modal */}
+      <Modal visible={!!ptModal} transparent animationType="slide" onRequestClose={() => setPtModal(null)}>
+        <TouchableOpacity style={pm.overlay} activeOpacity={1} onPress={() => setPtModal(null)}>
+          <View style={pm.sheet} onStartShouldSetResponder={() => true}>
+            <View style={pm.header}>
+              <Text style={pm.headerLabel}>WHO'S THIS SESSION FOR?</Text>
+              <Text style={pm.headerClass}>PT with {ptModal?.context?.instructorName}</Text>
+              <Text style={pm.headerMeta}>
+                {ptModal?.context?.startsAt ? new Date(ptModal.context.startsAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' }) : ''}
+                {' · '}{ptModal?.context?.durationMins} min · £{ptModal?.context?.price?.toFixed(2)}
+              </Text>
+            </View>
+            <ScrollView style={pm.list}>
+              {(ptModal?.candidates ?? []).map((c: any) => {
+                const isSelected = ptSelectedCandidate === c.id;
+                const age = c.dateOfBirth ? Math.floor((Date.now() - new Date(c.dateOfBirth).getTime()) / (1000*60*60*24*365.25)) : null;
+                return (
+                  <TouchableOpacity key={c.id} style={[pm.row, isSelected && pm.rowSelected]} onPress={() => setPtSelectedCandidate(c.id)} activeOpacity={0.7}>
+                    {c.image
+                      ? <Image source={{ uri: c.image }} style={pm.avatar} />
+                      : <View style={pm.avatarPlaceholder}><Text style={pm.avatarText}>{c.firstName[0]}{c.isSelf ? '' : c.lastName[0]}</Text></View>
+                    }
+                    <View style={pm.rowInfo}>
+                      <Text style={pm.rowName}>{c.isSelf ? 'You' : `${c.firstName} ${c.lastName}`}</Text>
+                      <Text style={pm.rowSub}>{c.isSelf ? 'Book for yourself' : age !== null ? `age ${age} · Junior member` : 'Junior member'}</Text>
+                    </View>
+                    <View style={[pm.radio, isSelected && pm.radioSelected]}>
+                      {isSelected && <View style={pm.radioInner} />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <View style={pm.footer}>
+              <TouchableOpacity style={pm.cancelBtn} onPress={() => setPtModal(null)}>
+                <Text style={pm.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[pm.confirmBtn, !ptSelectedCandidate && pm.confirmBtnDisabled]}
+                onPress={handlePtModalConfirm} disabled={!ptSelectedCandidate}>
+                <Text style={pm.confirmBtnText}>
+                  {ptSelectedCandidate ? `Book — £${ptModal?.context?.price?.toFixed(2)}` : 'Select a member'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </ScrollView>
   );
 }
@@ -283,9 +396,9 @@ const s = StyleSheet.create({
   dateBtnTextActive: { color: Colors.bg },
   noSlots: { color: Colors.textMuted, fontSize: 14, textAlign: 'center', paddingVertical: 12 },
   slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  slotBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
+  slotBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, minWidth: '30%', alignItems: 'center' },
   slotBtnActive: { backgroundColor: Colors.white, borderColor: Colors.white },
-  slotText: { color: Colors.text, fontSize: 14, fontWeight: '600' },
+  slotText: { color: Colors.text, fontSize: 13, fontWeight: '600' },
   slotTextActive: { color: Colors.bg },
   summary: { backgroundColor: Colors.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.border, gap: 10 },
   summaryTitle: { color: Colors.textFaint, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
@@ -298,4 +411,41 @@ const s = StyleSheet.create({
   bookNowBtn: { backgroundColor: Colors.white, padding: 16, borderRadius: 12, alignItems: 'center' },
   bookNowText: { color: Colors.bg, fontWeight: '700', fontSize: 16 },
   empty: { color: Colors.textMuted, textAlign: 'center', marginTop: 40 },
+  upcomingLabel: { fontSize: 11, fontWeight: '700', color: '#a1a1aa', letterSpacing: 1 },
+  upcomingCard: { backgroundColor: '#1a1a1a', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#2a2a2a', borderLeftWidth: 4, flexDirection: 'row', gap: 10 },
+  upcomingBar: { width: 3, borderRadius: 2, alignSelf: 'stretch' },
+  upcomingInfo: { flex: 1, gap: 4 },
+  upcomingName: { fontSize: 15, fontWeight: '700', color: '#ffffff' },
+  upcomingMeta: { fontSize: 12, color: '#a0a0a0' },
+  upcomingBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  upcomingBadgeGreen: { backgroundColor: 'rgba(34,197,94,0.15)' },
+  upcomingBadgeAmber: { backgroundColor: 'rgba(245,158,11,0.15)' },
+  upcomingBadgeText: { fontSize: 10, fontWeight: '700', color: '#ffffff' },
+});
+
+const pm = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#1a1a1a', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%' },
+  header: { padding: 20, borderBottomWidth: 1, borderBottomColor: '#2a2a2a' },
+  headerLabel: { fontSize: 10, fontWeight: '700', color: '#a1a1aa', letterSpacing: 1, marginBottom: 4 },
+  headerClass: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
+  headerMeta: { fontSize: 12, color: '#a0a0a0', marginTop: 2 },
+  list: { maxHeight: 280 },
+  row: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, borderBottomWidth: 1, borderBottomColor: '#2a2a2a22' },
+  rowSelected: { backgroundColor: '#2a2a2a' },
+  avatar: { width: 44, height: 44, borderRadius: 22 },
+  avatarPlaceholder: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#2a2a2a', justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  rowInfo: { flex: 1, gap: 2 },
+  rowName: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
+  rowSub: { fontSize: 12, color: '#a1a1aa' },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#3f3f46', justifyContent: 'center', alignItems: 'center' },
+  radioSelected: { borderColor: '#ffffff' },
+  radioInner: { width: 11, height: 11, borderRadius: 6, backgroundColor: '#ffffff' },
+  footer: { flexDirection: 'row', padding: 16, gap: 12, borderTopWidth: 1, borderTopColor: '#2a2a2a' },
+  cancelBtn: { paddingHorizontal: 16, paddingVertical: 14, justifyContent: 'center' },
+  cancelBtnText: { color: '#a0a0a0', fontSize: 14 },
+  confirmBtn: { flex: 1, backgroundColor: '#ffffff', padding: 14, borderRadius: 12, alignItems: 'center' },
+  confirmBtnDisabled: { backgroundColor: '#2a2a2a' },
+  confirmBtnText: { color: '#0a0a0a', fontWeight: '700', fontSize: 15 },
 });

@@ -10,5 +10,5 @@ export default function Index() {
       <ActivityIndicator color={Colors.white} size="large" />
     </View>
   );
-  return <Redirect href={member ? '/(tabs)' : '/(auth)/welcome'} />;
+  return <Redirect href={member ? '/(tabs)' : '/(auth)/login'} />;
 }

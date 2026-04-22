@@ -1,28 +1,38 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Modal, Image, Alert, Platform } from 'react-native';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  ActivityIndicator, RefreshControl, Modal, Image,
+  Platform, Alert, Linking
+} from 'react-native';
+import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch, apiPost, apiDelete } from '@/lib/api';
-import { Colors } from '@/constants/colors';
-import { useStripe } from '@stripe/stripe-react-native';
+import { getToken } from '@/lib/auth';
+import { SvgXml } from 'react-native-svg';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { getToken } from '@/lib/auth';
+import { useStripe } from '@stripe/stripe-react-native';
 
-interface OpenGym { allowed: boolean; slots: { start: string; end: string }[]; gymSlots: { start: string; end: string }[]; reason: string | null; }
-interface ClassEvent { id: string; type: 'class'; name: string; color: string; startsAt: string; endsAt: string; location: string; instructor: string | null; spotsLeft: number; capacity: number; bookedCount: number; isBooked: boolean; myBookingId: string | null; planPrice: number | null; canBook: boolean; includedInPlan: boolean; allowedByRule: boolean; }
-interface PtEvent { id: string; type: 'pt'; name: string; color: string; startsAt: string; endsAt: string; status: string; instructor: string; }
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface OpenGym { allowed: boolean; slots: {start:string;end:string}[]; gymSlots: {start:string;end:string}[]; reason: string|null; }
+interface ClassEvent { id:string; type:'class'; name:string; color:string; startsAt:string; endsAt:string; location:string; instructor:string|null; spotsLeft:number; capacity:number; bookedCount:number; isBooked:boolean; myBookingId:string|null; planPrice:number|null; canBook:boolean; includedInPlan:boolean; allowedByRule:boolean; }
+interface PtEvent { id:string; type:'pt'; name:string; color:string; startsAt:string; endsAt:string; status:string; instructor:string; }
 type GymEvent = ClassEvent | PtEvent;
-interface DiaryDay { date: string; dayName: string; gymClosed: boolean; openGym: OpenGym; events: GymEvent[]; }
-interface DiaryData { plan: { name: string; planType: string; accessMode: string; subStatus: string | null } | null; days: DiaryDay[]; }
+interface DiaryDay { date:string; dayName:string; gymClosed:boolean; openGym:OpenGym; events:GymEvent[]; }
+interface DiaryData { plan:{name:string;planType:string;accessMode:string;subStatus:string|null}|null; days:DiaryDay[]; }
+interface Child { id:string; memberId:string; firstName:string; lastName:string; dateOfBirth:string|null; image:string|null; plan:{name:string}|null; subscription:{status:string}|null; nextBooking:{Class:{ClassType:{name:string};startsAt:string}}|null; }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
-}
-function fmtDate(dateStr: string) {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' });
+  return new Date(iso).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', timeZone:'Europe/London' });
 }
 function fmtDateShort(dateStr: string) {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' });
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', timeZone:'Europe/London' });
+}
+function fmtDateFull(dateStr: string) {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', timeZone:'Europe/London' });
 }
 function isToday(dateStr: string) { return new Date().toISOString().startsWith(dateStr); }
 function getGreeting() {
@@ -31,75 +41,50 @@ function getGreeting() {
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
 }
-function getInitials(name: string) {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return (parts[0]?.[0] || '?').toUpperCase();
+function getAge(dob: string | null): number | null {
+  if (!dob) return null;
+  const diff = Date.now() - new Date(dob).getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
 }
+
+// ─── SVG Icons ────────────────────────────────────────────────────────────────
+
+const chevronRight = (color: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>`;
+
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const { member } = useAuth();
+  const router = useRouter();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+
   const [diary, setDiary] = useState<DiaryData | null>(null);
+  const [family, setFamily] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [qrModal, setQrModal] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [downloadingWallet, setDownloadingWallet] = useState(false);
+  const [toast, setToast] = useState<{msg:string;ok:boolean}|null>(null);
+  const [bookModal, setBookModal] = useState<{ ev: ClassEvent; candidates: any[] } | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
+  const [eligibility, setEligibility] = useState<Record<string, any>>({});
 
-  async function handleAppleWallet() {
-    setDownloadingWallet(true);
+  const loadData = useCallback(async () => {
     try {
-      const token = await getToken();
-      if (!token) throw new Error('Not logged in');
-
-      console.log('Fetching wallet pass...');
-
-      const response = await fetch('https://app.crusader9.co.uk/api/mobile/wallet-pass', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!response.ok) throw new Error(`Server error ${response.status}`);
-
-      const arrayBuffer = await response.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-
-      let binary = '';
-      const chunkSize = 8192;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.subarray(i, i + chunkSize);
-        binary += String.fromCharCode(...chunk);
-      }
-      const base64 = btoa(binary);
-
-      console.log('Got base64, length:', base64.length);
-
-      const fileUri = FileSystem.documentDirectory + 'crusader9.pkpass';
-      await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: 'base64' as any });
-
-      console.log('Written, sharing...');
-
-      await Sharing.shareAsync(fileUri, {
-        mimeType: 'application/vnd.apple.pkpass',
-        UTI: 'com.apple.pkpass',
-        dialogTitle: 'Add to Apple Wallet',
-      });
-    } catch (e: any) {
-      console.error('Wallet error:', e);
-      Alert.alert('Wallet Error', e.message ?? 'Unknown error');
-    } finally {
-      setDownloadingWallet(false);
-    }
-  }
-
-  const loadDiary = useCallback(async () => {
-    try { const d = await apiFetch('/diary'); setDiary(d); } catch {}
+      const [diaryData, familyData] = await Promise.all([
+        apiFetch('/diary'),
+        apiFetch('/family').catch(() => ({ children: [] })),
+      ]);
+      setDiary(diaryData);
+      setFamily(familyData.children ?? []);
+    } catch {}
   }, []);
 
-  useEffect(() => { loadDiary().finally(() => setLoading(false)); }, []);
+  useEffect(() => { loadData().finally(() => setLoading(false)); }, []);
 
-  async function onRefresh() { setRefreshing(true); await loadDiary(); setRefreshing(false); }
+  async function onRefresh() { setRefreshing(true); await loadData(); setRefreshing(false); }
 
   function showToast(msg: string, ok: boolean) {
     setToast({ msg, ok });
@@ -107,119 +92,214 @@ export default function Dashboard() {
   }
 
   async function handleBook(ev: ClassEvent) {
+    // If parent has children, show member picker
+    if (family.length > 0 && member) {
+      const candidates = [
+        { id: (member as any).memberInternalId ?? member.id, firstName: member.firstName, lastName: member.lastName, image: member.image, isSelf: true, dateOfBirth: null },
+        ...family.map((c: any) => ({ id: c.id, firstName: c.firstName, lastName: c.lastName, image: c.image, isSelf: false, dateOfBirth: c.dateOfBirth })),
+      ];
+      setBookModal({ ev, candidates });
+      setSelectedCandidate(null);
+      setEligibility({});
+      candidates.forEach(async (c) => {
+        try {
+          const res = await apiFetch(`/classes/${ev.id}/eligibility?for=${c.id}`);
+          setEligibility(prev => ({ ...prev, [c.id]: res }));
+        } catch {
+          setEligibility(prev => ({ ...prev, [c.id]: { error: true } }));
+        }
+      });
+      return;
+    }
+
+    // No children — book directly for self
+    await proceedWithBooking(ev, null);
+  }
+
+  async function proceedWithBooking(ev: ClassEvent, forMemberId: string | null) {
     setBookingId(ev.id);
     try {
       if (ev.planPrice !== null && ev.planPrice > 0) {
-        const bookRes = await apiPost('/classes/' + ev.id + '/book', { pending: true });
+        const bookRes = await apiPost('/classes/' + ev.id + '/book', { pending: true, ...(forMemberId && { forMemberId }) });
         const intentRes = await apiPost('/stripe/payment-intent', { type: 'class_booking', classId: ev.id, bookingId: bookRes.bookingId });
-        const { error: initError } = await initPaymentSheet({
-          paymentIntentClientSecret: intentRes.clientSecret,
-          merchantDisplayName: 'Crusader 9 Boxing',
-          style: 'alwaysDark',
-        });
+        const { error: initError } = await initPaymentSheet({ paymentIntentClientSecret: intentRes.clientSecret, merchantDisplayName: 'Crusader 9 Boxing', style: 'alwaysDark' });
         if (initError) { showToast(initError.message, false); return; }
         const { error: presentError } = await presentPaymentSheet();
         if (presentError) { if (presentError.code !== 'Canceled') showToast(presentError.message, false); return; }
-        await apiPost('/stripe/confirm-booking', {
-          paymentIntentId: intentRes.clientSecret.split('_secret_')[0],
-          type: 'class_booking',
-          bookingId: bookRes.bookingId,
-        });
+        await apiPost('/stripe/confirm-booking', { paymentIntentId: intentRes.clientSecret.split('_secret_')[0], type: 'class_booking', bookingId: bookRes.bookingId });
         showToast('Booked!', true);
-        await loadDiary();
+        await loadData();
       } else {
-        await apiPost('/classes/' + ev.id + '/book', {});
+        await apiPost('/classes/' + ev.id + '/book', forMemberId ? { forMemberId } : {});
         showToast('Booked!', true);
-        await loadDiary();
+        await loadData();
       }
     } catch (e: any) { showToast(e.message || 'Booking failed', false); }
     finally { setBookingId(null); }
   }
 
+  async function handleModalConfirm() {
+    if (!bookModal || !selectedCandidate) return;
+    const candidate = bookModal.candidates.find(c => c.id === selectedCandidate);
+    const forMemberId = candidate?.isSelf ? null : selectedCandidate;
+    const ev = bookModal.ev;
+    setBookModal(null);
+    await proceedWithBooking(ev, forMemberId);
+  }
+
   async function handleCancel(ev: ClassEvent) {
-    if (!ev.myBookingId) return;
     Alert.alert('Cancel Booking', 'Are you sure?', [
       { text: 'No' },
-      { text: 'Yes, cancel', style: 'destructive', onPress: async () => {
+      { text: 'Cancel booking', style: 'destructive', onPress: async () => {
         setBookingId(ev.id);
-        try { await apiDelete('/classes/' + ev.id + '/book'); showToast('Booking cancelled', true); await loadDiary(); }
+        try { await apiDelete('/classes/' + ev.id + '/book'); showToast('Booking cancelled', true); await loadData(); }
         catch (e: any) { showToast(e.message || 'Failed', false); }
         finally { setBookingId(null); }
       }},
     ]);
   }
 
-  const firstName = member?.firstName || '';
-  const hasPlan = !!diary?.plan;
-  const todayDay = diary?.days.find(d => isToday(d.date));
-  const restDays = diary?.days.filter(d => !isToday(d.date)) || [];
+  async function handleGoogleWallet() {
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not logged in');
+      const res = await fetch('https://app.crusader9.co.uk/api/mobile/google-wallet-pass', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const data = await res.json();
+      await Linking.openURL(data.saveUrl);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  }
 
-  if (loading) return <View style={s.center}><ActivityIndicator color={Colors.white} /></View>;
+  async function handleAppleWallet() {
+    setDownloadingWallet(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not logged in');
+      const localUri = FileSystem.cacheDirectory + 'crusader9.pkpass';
+      await FileSystem.downloadAsync(
+        'https://app.crusader9.co.uk/api/member/wallet',
+        localUri,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      await Sharing.shareAsync(localUri, {
+        mimeType: 'application/vnd.apple.pkpass',
+        UTI: 'com.apple.pkpass',
+      });
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not generate pass');
+    } finally { setDownloadingWallet(false); }
+  }
+
+  const todayDay = diary?.days.find(d => isToday(d.date));
+  const restDays = diary?.days.filter(d => !isToday(d.date)) ?? [];
+  const subStatus = diary?.plan?.subStatus;
+
+  if (loading) return <View style={s.loadingContainer}><ActivityIndicator color="#fff" size="large" /></View>;
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.white} />}>
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}>
 
       {/* Toast */}
       {toast && (
         <View style={[s.toast, toast.ok ? s.toastOk : s.toastErr]}>
-          <Text style={[s.toastText, { color: toast.ok ? Colors.greenText : '#fca5a5' }]}>{toast.msg}</Text>
+          <Text style={[s.toastText, { color: toast.ok ? '#4ade80' : '#fca5a5' }]}>{toast.msg}</Text>
         </View>
       )}
 
       {/* Header */}
-      <View style={s.header}>
-        <Text style={s.greeting}>{getGreeting()}, {firstName}</Text>
-        <View style={s.planRow}>
-          {hasPlan ? (
-            <View style={s.planBadge}>
-              <Text style={s.planBadgeName}>{diary!.plan!.name}</Text>
-              <View style={s.planStatusRow}>
-                <View style={[s.dot, { backgroundColor: diary!.plan!.subStatus === 'ACTIVE' ? Colors.green : diary!.plan!.subStatus === 'PAUSED' ? Colors.amber : Colors.textFaint }]} />
-                <Text style={s.planStatusText}>{diary!.plan!.subStatus ?? ''}</Text>
-              </View>
-            </View>
-          ) : (
-            <View style={s.planBadge}>
-              <View style={s.planStatusRow}>
-                <View style={[s.dot, { backgroundColor: Colors.textFaint }]} />
-                <Text style={s.planStatusText}>No membership</Text>
-              </View>
-            </View>
-          )}
-        </View>
-      </View>
+      <Text style={s.greeting}>{getGreeting()}, <Text style={s.greetingName}>{member?.firstName}.</Text></Text>
 
-      {/* QR Card */}
+      {/* QR Member Card */}
       {member && (
-        <TouchableOpacity style={s.qrCard} onPress={() => setQrModal(true)} activeOpacity={0.85}>
-          <View style={s.qrInner}>
-            {member.qrCode && <Image source={{ uri: member.qrCode }} style={s.qrImage} />}
-            <View>
-              <Text style={s.qrName}>{member.firstName} {member.lastName}</Text>
-              <Text style={s.qrId}>{member.memberId}</Text>
-              {member.plan && (
-                <View style={s.qrPlanRow}>
-                  <Text style={s.qrPlanText}>{member.plan.name}</Text>
-                  <View style={[s.dot, { backgroundColor: member.subscription?.status === 'ACTIVE' ? Colors.green : Colors.textFaint, marginLeft: 6 }]} />
-                </View>
-              )}
-            </View>
-          </View>
-          <Text style={s.qrHint}>Tap to enlarge · Show at front desk to check in</Text>
-          {Platform.OS === 'ios' && (
-            <TouchableOpacity style={s.walletBtn} onPress={handleAppleWallet} disabled={downloadingWallet}>
-              <Text style={s.walletBtnText}>{downloadingWallet ? 'Generating...' : '🍎 Add to Apple Wallet'}</Text>
+        <View style={s.memberCard}>
+          {/* Top row — avatar + name + plan pill */}
+          <View style={s.memberCardTop}>
+            <TouchableOpacity onPress={() => setQrModal(true)} activeOpacity={0.8}>
+              {member.image
+                ? <Image source={{ uri: member.image }} style={s.memberAvatar} />
+                : <View style={[s.memberAvatar, s.memberAvatarPlaceholder]}>
+                    <Text style={s.memberAvatarText}>{member.firstName?.[0]}{member.lastName?.[0]}</Text>
+                  </View>
+              }
             </TouchableOpacity>
-          )}
-        </TouchableOpacity>
+            <View style={s.memberNameBlock}>
+              <Text style={s.memberName}>{member.firstName} {member.lastName}</Text>
+              <Text style={s.memberIdText}>{member.memberId}</Text>
+              <View style={s.memberPlanRow}>
+                {diary?.plan && (
+                  <View style={[s.planPill, { borderColor: subStatus === 'ACTIVE' ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)', backgroundColor: subStatus === 'ACTIVE' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)' }]}>
+                    <View style={[s.statusDot, { backgroundColor: subStatus === 'ACTIVE' ? '#22c55e' : '#f59e0b' }]} />
+                    <Text style={[s.planPillText, { color: subStatus === 'ACTIVE' ? '#4ade80' : '#fbbf24' }]}>{diary.plan.name}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            {/* QR small */}
+            <TouchableOpacity onPress={() => setQrModal(true)} style={s.qrThumb} activeOpacity={0.8}>
+              {member.qrCode && <Image source={{ uri: member.qrCode }} style={s.qrThumbImage} />}
+            </TouchableOpacity>
+          </View>
+
+          {/* Divider */}
+          <View style={s.memberCardDivider} />
+
+          {/* Bottom row — hint + wallet */}
+          <View style={s.memberCardBottom}>
+            <Text style={s.qrHint}>Tap QR to enlarge · Show at front desk</Text>
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity onPress={handleAppleWallet} disabled={downloadingWallet} activeOpacity={0.8}>
+                {downloadingWallet
+                  ? <View style={s.walletGenerating}><Text style={s.walletGeneratingText}>Generating...</Text></View>
+                  : <Image source={require('../../assets/add-to-apple-wallet.png')} style={s.walletBadge} resizeMode="contain" />
+                }
+              </TouchableOpacity>
+            )}
+            {Platform.OS === 'android' && (
+              <TouchableOpacity onPress={handleGoogleWallet} activeOpacity={0.8}>
+                <Image source={require('../../assets/google-wallet-badge.png')} style={s.walletBadge} resizeMode="contain" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* Family Section */}
+      {family.length > 0 && (
+        <View style={s.section}>
+          <Text style={s.sectionLabel}>YOUR FAMILY</Text>
+          {family.map(child => {
+            const age = getAge(child.dateOfBirth);
+            const nextClass = child.nextBooking?.Class;
+            return (
+              <TouchableOpacity key={child.id} style={s.familyCard} onPress={() => router.push('/profile/family')} activeOpacity={0.7}>
+                <View style={s.familyAvatarWrap}>
+                  {child.image
+                    ? <Image source={{ uri: child.image }} style={s.familyAvatarImg} />
+                    : <View style={s.familyAvatarImgPlaceholder}><Text style={s.familyAvatarText}>{child.firstName[0]}{child.lastName[0]}</Text></View>
+                  }
+                </View>
+                <View style={s.familyInfo}>
+                  <Text style={s.familyName} numberOfLines={1}>{child.firstName} {child.lastName}</Text>
+                  <Text style={s.familyMeta}>{age !== null ? `age ${age} · ` : ''}Junior member</Text>
+                  {nextClass && <Text style={s.familyNext} numberOfLines={1}>Next: {nextClass.ClassType?.name} · {fmtTime(nextClass.startsAt)}</Text>}
+                </View>
+                <Text style={s.familyManageArrow}>›</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       )}
 
       {/* Today */}
       {todayDay && (
         <View style={s.section}>
           <Text style={s.sectionLabel}>TODAY</Text>
-          <TodayCard day={todayDay} bookingId={bookingId} onBook={handleBook} onCancel={handleCancel} />
+          <TodayCard day={todayDay} bookingId={bookingId} hasFamily={family.length > 0} onBook={handleBook} onCancel={handleCancel} />
         </View>
       )}
 
@@ -228,7 +308,7 @@ export default function Dashboard() {
         <View style={s.section}>
           <Text style={s.sectionLabel}>THIS WEEK</Text>
           {restDays.map(day => (
-            <FutureDayCard key={day.date} day={day} bookingId={bookingId} onBook={handleBook} onCancel={handleCancel} />
+            <FutureDayCard key={day.date} day={day} bookingId={bookingId} hasFamily={family.length > 0} onBook={handleBook} onCancel={handleCancel} />
           ))}
         </View>
       )}
@@ -246,19 +326,98 @@ export default function Dashboard() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Who's this class for? Modal */}
+      <Modal visible={!!bookModal} transparent animationType="slide" onRequestClose={() => setBookModal(null)}>
+        <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setBookModal(null)}>
+          <View style={m.sheet} onStartShouldSetResponder={() => true}>
+            <View style={m.header}>
+              <Text style={m.headerLabel}>WHO'S THIS CLASS FOR?</Text>
+              <Text style={m.headerClass}>{bookModal?.ev?.name}</Text>
+              <Text style={m.headerMeta}>
+                {bookModal?.ev?.startsAt ? new Date(bookModal.ev.startsAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' }) : ''}
+                {bookModal?.ev?.location ? ' · ' + bookModal.ev.location : ''}
+              </Text>
+            </View>
+            <ScrollView style={m.list}>
+              {(bookModal?.candidates ?? []).map((c: any) => {
+                const elig = eligibility[c.id];
+                const isLoading = !elig;
+                const isError = elig?.error;
+                const alreadyBooked = elig?.alreadyBooked;
+                const isFull = elig?.isFull;
+                const eligibleFree = elig?.eligibleForFree;
+                const price = elig?.planPrice;
+                const reason = elig?.reason;
+                const selectable = !isLoading && !isError && !alreadyBooked && !isFull && (eligibleFree || (price !== null && price !== undefined && price > 0));
+                const isSelected = selectedCandidate === c.id;
+                const age = c.dateOfBirth ? Math.floor((Date.now() - new Date(c.dateOfBirth).getTime()) / (1000*60*60*24*365.25)) : null;
+
+                return (
+                  <TouchableOpacity key={c.id} style={[m.row, isSelected && m.rowSelected, !selectable && m.rowDisabled]}
+                    onPress={() => selectable && setSelectedCandidate(c.id)} disabled={!selectable} activeOpacity={0.7}>
+                    {c.image
+                      ? <Image source={{ uri: c.image }} style={m.avatar} />
+                      : <View style={m.avatarPlaceholder}><Text style={m.avatarText}>{c.firstName[0]}{c.lastName[0]}</Text></View>
+                    }
+                    <View style={m.rowInfo}>
+                      <Text style={[m.rowName, !selectable && m.rowNameDimmed]}>{c.firstName} {c.lastName}</Text>
+                      <Text style={m.rowSub}>{c.isSelf ? 'You' : age !== null ? `age ${age} · Junior member` : 'Junior member'}</Text>
+                      {isLoading && <Text style={m.rowElig}>Checking eligibility...</Text>}
+                      {isError && <Text style={[m.rowElig, { color: '#ef4444' }]}>Unable to check eligibility</Text>}
+                      {!isLoading && !isError && alreadyBooked && <Text style={m.rowElig}>Already booked</Text>}
+                      {!isLoading && !isError && isFull && !alreadyBooked && <Text style={m.rowElig}>Class full</Text>}
+                      {!isLoading && !isError && !alreadyBooked && !isFull && eligibleFree && <Text style={[m.rowElig, { color: '#4ade80' }]}>Included in plan</Text>}
+                      {!isLoading && !isError && !alreadyBooked && !isFull && !eligibleFree && price > 0 && <Text style={[m.rowElig, { color: '#f59e0b' }]}>£{Number(price).toFixed(2)} · pay at checkout</Text>}
+                      {!isLoading && !isError && !alreadyBooked && !isFull && !eligibleFree && !price && reason && <Text style={m.rowElig}>{reason}</Text>}
+                    </View>
+                    {selectable && (
+                      <View style={[m.radio, isSelected && m.radioSelected]}>
+                        {isSelected && <View style={m.radioInner} />}
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <View style={m.footer}>
+              <TouchableOpacity style={m.cancelBtn} onPress={() => setBookModal(null)}>
+                <Text style={m.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[m.confirmBtn, !selectedCandidate && m.confirmBtnDisabled]}
+                onPress={handleModalConfirm} disabled={!selectedCandidate}>
+                <Text style={m.confirmBtnText}>
+                  {(() => {
+                    if (!selectedCandidate) return 'Select a member';
+                    const elig = eligibility[selectedCandidate];
+                    if (elig?.eligibleForFree) return 'Book';
+                    if (elig?.planPrice > 0) return `Pay & Book — £${Number(elig.planPrice).toFixed(2)}`;
+                    return 'Select a member';
+                  })()}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </ScrollView>
   );
 }
 
-function OpenGymSection({ day }: { day: DiaryDay }) {
+// ─── Diary Components ─────────────────────────────────────────────────────────
+
+function OpenGymRow({ day }: { day: DiaryDay }) {
+  const router = useRouter();
+
   if (day.gymClosed) return (
     <View style={s.gymRow}>
-      <Text style={s.gymClosed}>🔒 Gym Closed{day.openGym.reason && day.openGym.reason !== 'Gym closed' ? ` — ${day.openGym.reason}` : ''}</Text>
+      <Text style={s.gymClosedText}>🔒  Gym closed{day.openGym.reason && day.openGym.reason !== 'Gym closed' ? ` — ${day.openGym.reason}` : ''}</Text>
     </View>
   );
+
   if (day.openGym.allowed) return (
-    <View style={[s.gymRow, s.gymOpen]}>
-      <Text style={s.gymOpenLabel}>Open Gym — you're good to go</Text>
+    <View style={[s.gymRow, s.gymOpenRow]}>
+      <Text style={s.gymOpenLabel}>Open gym — you're good to go</Text>
       <View style={s.slotRow}>
         {day.openGym.slots.map((sl, i) => (
           <View key={i} style={s.slotBadge}><Text style={s.slotText}>{sl.start}–{sl.end}</Text></View>
@@ -266,24 +425,37 @@ function OpenGymSection({ day }: { day: DiaryDay }) {
       </View>
     </View>
   );
+
+  // Not allowed — show locked times + upgrade link if gymSlots available
+  const gymSlots = day.openGym.gymSlots ?? [];
   return (
     <View style={s.gymRow}>
-      <Text style={s.gymClosedLabel}>Open gym not available{day.openGym.reason ? ` — ${day.openGym.reason}` : ''}</Text>
-      {day.openGym.gymSlots.length > 0 && (
-        <View style={s.slotRow}>
-          {day.openGym.gymSlots.map((sl, i) => (
-            <View key={i} style={s.slotBadgeDim}><Text style={s.slotTextDim}>🔒 {sl.start}–{sl.end}</Text></View>
-          ))}
-        </View>
-      )}
+      <View style={s.gymLockedRow}>
+        <Text style={s.gymNotAvailText}>
+          {day.openGym.reason ?? 'Open gym not available'}
+        </Text>
+        {gymSlots.length > 0 && (
+          <View style={s.slotRow}>
+            {gymSlots.map((sl, i) => (
+              <View key={i} style={s.slotBadgeLocked}>
+                <Text style={s.gymLockIcon}>🔒</Text>
+                <Text style={s.slotTextLocked}>{sl.start}–{sl.end}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+        <TouchableOpacity onPress={() => router.push('/(tabs)/plans')} style={s.upgradeBtn} activeOpacity={0.8}>
+          <Text style={s.upgradeBtnText}>Upgrade Plan →</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
-function ClassRow({ ev, bookingId, onBook, onCancel }: { ev: ClassEvent; bookingId: string | null; onBook: (e: ClassEvent) => void; onCancel: (e: ClassEvent) => void; }) {
-  const isFull = ev.spotsLeft === 0 && !ev.isBooked;
+function ClassRow({ ev, bookingId, hasFamily, onBook, onCancel }: { ev: ClassEvent; bookingId: string|null; hasFamily: boolean; onBook: (e:ClassEvent)=>void; onCancel: (e:ClassEvent)=>void }) {
   const isLoading = bookingId === ev.id;
-  const barColor = ev.isBooked ? Colors.green : ev.includedInPlan ? Colors.indigo : (ev.planPrice && ev.planPrice > 0) ? Colors.amber : Colors.borderHigh;
+  const isFull = ev.spotsLeft === 0 && !ev.isBooked;
+  const barColor = ev.isBooked ? '#22c55e' : ev.includedInPlan ? '#6366f1' : ev.planPrice && ev.planPrice > 0 ? '#f59e0b' : '#3f3f46';
 
   return (
     <View style={s.eventRow}>
@@ -292,29 +464,34 @@ function ClassRow({ ev, bookingId, onBook, onCancel }: { ev: ClassEvent; booking
         <View style={s.eventTitleRow}>
           <Text style={s.eventTitle}>{ev.name}</Text>
           {ev.isBooked && <View style={s.tagGreen}><Text style={s.tagGreenText}>✓ Booked</Text></View>}
-          {!ev.isBooked && ev.includedInPlan && <View style={s.tagGreen}><Text style={s.tagGreenText}>Included in plan</Text></View>}
+          {ev.isBooked && hasFamily && <View style={s.tagGreen}><Text style={s.tagGreenText}>✓ You're booked</Text></View>}
+          {!ev.isBooked && ev.includedInPlan && <View style={s.tagGreen}><Text style={s.tagGreenText}>Included</Text></View>}
           {!ev.isBooked && !ev.includedInPlan && ev.planPrice !== null && ev.planPrice > 0 && <View style={s.tagAmber}><Text style={s.tagAmberText}>£{ev.planPrice.toFixed(2)}</Text></View>}
         </View>
-        <Text style={s.eventTime}>{fmtTime(ev.startsAt)}–{fmtTime(ev.endsAt)}{ev.instructor ? ` · ${ev.instructor}` : ''}{ev.location ? ` · ${ev.location}` : ''}</Text>
-        {!ev.isBooked && <Text style={[s.spots, ev.spotsLeft <= 3 && !isFull ? { color: Colors.amber } : isFull ? { color: Colors.red } : {}]}>{isFull ? 'Full' : `${ev.spotsLeft} spot${ev.spotsLeft !== 1 ? 's' : ''} left`}</Text>}
+        <Text style={s.eventMeta}>{fmtTime(ev.startsAt)}–{fmtTime(ev.endsAt)}{ev.instructor ? ` · ${ev.instructor}` : ''}{ev.location ? ` · ${ev.location}` : ''}</Text>
+        {!ev.isBooked && !isFull && <Text style={[s.spotsText, ev.spotsLeft <= 3 ? {color:'#f59e0b'} : {}]}>{ev.spotsLeft} spot{ev.spotsLeft !== 1 ? 's' : ''} left</Text>}
+        {isFull && <Text style={[s.spotsText, {color:'#ef4444'}]}>Full</Text>}
       </View>
       <View style={s.eventAction}>
-        {ev.isBooked ? (
-          <TouchableOpacity style={s.btnGrey} onPress={() => onCancel(ev)} disabled={isLoading}>
-            <Text style={s.btnGreyText}>{isLoading ? '...' : 'Cancel'}</Text>
-          </TouchableOpacity>
-        ) : isFull ? <Text style={s.fullText}>Full</Text>
-        : ev.includedInPlan || ev.planPrice === 0 ? (
-          <TouchableOpacity style={s.btnWhite} onPress={() => onBook(ev)} disabled={isLoading}>
-            <Text style={s.btnWhiteText}>{isLoading ? '...' : 'Book Now'}</Text>
-          </TouchableOpacity>
-        ) : ev.planPrice !== null && ev.planPrice > 0 ? (
-          <TouchableOpacity style={s.btnWhite} onPress={() => onBook(ev)} disabled={isLoading}>
-            <Text style={s.btnWhiteText}>{isLoading ? '...' : 'Pay & Book'}</Text>
-          </TouchableOpacity>
-        ) : !ev.allowedByRule ? (
-          <Text style={s.naText}>Not on your plan</Text>
-        ) : null}
+        {isFull && !ev.isBooked ? null : (
+          <View style={{ gap: 6, alignItems: 'flex-end' }}>
+            {ev.isBooked && (
+              <TouchableOpacity style={s.btnGrey} onPress={() => onCancel(ev)} disabled={isLoading}>
+                <Text style={s.btnGreyText}>{isLoading ? '...' : 'Cancel'}</Text>
+              </TouchableOpacity>
+            )}
+            {(!ev.isBooked || hasFamily) && (ev.includedInPlan || ev.planPrice === 0 || (ev.planPrice !== null && ev.planPrice > 0)) && (
+              <TouchableOpacity style={s.btnWhite} onPress={() => onBook(ev)} disabled={isLoading}>
+                <Text style={s.btnWhiteText}>
+                  {isLoading ? '...' : ev.isBooked ? 'Book for family' : ev.planPrice !== null && ev.planPrice > 0 && !ev.includedInPlan ? 'Pay & Book' : 'Book'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {!ev.isBooked && !ev.includedInPlan && ev.planPrice === null && !ev.allowedByRule && (
+              <Text style={s.naText}>Not on{'\n'}your plan</Text>
+            )}
+          </View>
+        )}
       </View>
     </View>
   );
@@ -322,193 +499,266 @@ function ClassRow({ ev, bookingId, onBook, onCancel }: { ev: ClassEvent; booking
 
 function PtRow({ ev }: { ev: PtEvent }) {
   return (
-    <View style={[s.eventRow, s.ptRow]}>
-      <View style={[s.eventBar, { backgroundColor: Colors.purple }]} />
+    <View style={[s.eventRow, s.ptRowBg]}>
+      <View style={[s.eventBar, { backgroundColor: '#8b5cf6' }]} />
       <View style={s.eventInfo}>
         <View style={s.eventTitleRow}>
-          <View style={s.tagPurple}><Text style={s.tagPurpleText}>PT Session</Text></View>
+          <View style={s.tagPurple}><Text style={s.tagPurpleText}>PT</Text></View>
           <Text style={s.eventTitle}>{ev.instructor}</Text>
         </View>
-        <Text style={s.eventTime}>{fmtTime(ev.startsAt)}–{fmtTime(ev.endsAt)}</Text>
+        <Text style={s.eventMeta}>{fmtTime(ev.startsAt)}–{fmtTime(ev.endsAt)}</Text>
       </View>
-      <View style={[s.statusBadge, ev.status === 'CONFIRMED' ? s.statusGreen : ev.status === 'PENDING' ? s.statusAmber : s.statusGrey]}>
-        <Text style={[s.statusText, ev.status === 'CONFIRMED' ? { color: Colors.greenText } : ev.status === 'PENDING' ? { color: Colors.amberText } : { color: Colors.textMuted }]}>{ev.status}</Text>
+      <View style={[s.statusPill, ev.status === 'CONFIRMED' ? s.statusGreen : ev.status === 'PENDING' ? s.statusAmber : s.statusGrey]}>
+        <Text style={s.statusPillText}>{ev.status}</Text>
       </View>
     </View>
   );
 }
 
-function TodayCard({ day, bookingId, onBook, onCancel }: { day: DiaryDay; bookingId: string | null; onBook: (e: ClassEvent) => void; onCancel: (e: ClassEvent) => void; }) {
+function TodayCard({ day, bookingId, hasFamily, onBook, onCancel }: { day:DiaryDay; bookingId:string|null; hasFamily: boolean; onBook:(e:ClassEvent)=>void; onCancel:(e:ClassEvent)=>void }) {
   const classEvents = day.events.filter((e): e is ClassEvent => e.type === 'class');
   const ptEvents = day.events.filter((e): e is PtEvent => e.type === 'pt');
   return (
     <View style={s.dayCard}>
       <View style={s.dayCardHeader}>
-        <View style={s.todayBadge}><Text style={s.todayBadgeText}>Today</Text></View>
-        <Text style={s.dayCardDate}>{fmtDate(day.date)}</Text>
+        <View style={s.todayBadge}><Text style={s.todayBadgeText}>TODAY</Text></View>
+        <Text style={s.dayCardDate}>{fmtDateFull(day.date)}</Text>
       </View>
-      <OpenGymSection day={day} />
+      <OpenGymRow day={day} />
       {classEvents.length > 0 && (
-        <View>
-          <View style={s.eventsHeader}><Text style={s.eventsLabel}>CLASSES</Text></View>
-          {classEvents.map(ev => <ClassRow key={ev.id} ev={ev} bookingId={bookingId} onBook={onBook} onCancel={onCancel} />)}
-        </View>
+        <>
+          <View style={s.eventsLabel}><Text style={s.eventsLabelText}>CLASSES</Text></View>
+          {classEvents.map(ev => <ClassRow key={ev.id} ev={ev} bookingId={bookingId} hasFamily={hasFamily} onBook={onBook} onCancel={onCancel} />)}
+        </>
       )}
       {ptEvents.length > 0 && (
-        <View>
-          <View style={s.eventsHeader}><Text style={s.eventsLabel}>YOUR PT SESSIONS</Text></View>
+        <>
+          <View style={s.eventsLabel}><Text style={s.eventsLabelText}>PT SESSIONS</Text></View>
           {ptEvents.map(ev => <PtRow key={ev.id} ev={ev} />)}
-        </View>
+        </>
       )}
-      {classEvents.length === 0 && ptEvents.length === 0 && !day.gymClosed && (
-        <Text style={s.noEvents}>No classes or sessions scheduled</Text>
+      {classEvents.length === 0 && ptEvents.length === 0 && (
+        <Text style={s.noEventsText}>No classes or sessions scheduled</Text>
       )}
     </View>
   );
 }
 
-function FutureDayCard({ day, bookingId, onBook, onCancel }: { day: DiaryDay; bookingId: string | null; onBook: (e: ClassEvent) => void; onCancel: (e: ClassEvent) => void; }) {
+function FutureDayCard({ day, bookingId, hasFamily, onBook, onCancel }: { day:DiaryDay; bookingId:string|null; hasFamily: boolean; onBook:(e:ClassEvent)=>void; onCancel:(e:ClassEvent)=>void }) {
   const [expanded, setExpanded] = useState(false);
   const classEvents = day.events.filter((e): e is ClassEvent => e.type === 'class');
   const ptEvents = day.events.filter((e): e is PtEvent => e.type === 'pt');
   const classCount = classEvents.length;
   const ptCount = ptEvents.length;
-
   return (
-    <View style={s.dayCard}>
-      <TouchableOpacity style={s.futureHeader} onPress={() => setExpanded(!expanded)}>
-        <View style={s.futureTitleRow}>
-          <Text style={s.futureDateText}>{fmtDateShort(day.date)}</Text>
+    <View style={[s.dayCard, s.dayCardMargin]}>
+      <TouchableOpacity style={s.futureDayHeader} onPress={() => setExpanded(!expanded)} activeOpacity={0.7}>
+        <View style={s.futureDayLeft}>
+          <Text style={s.futureDayDate}>{fmtDateShort(day.date)}</Text>
           <View style={s.futureBadges}>
             {classCount > 0 && <View style={s.countBadge}><Text style={s.countBadgeText}>{classCount} class{classCount !== 1 ? 'es' : ''}</Text></View>}
             {ptCount > 0 && <View style={s.countBadgePurple}><Text style={s.countBadgePurpleText}>{ptCount} PT</Text></View>}
           </View>
         </View>
-        <View style={s.futureRight}>
-          {day.gymClosed ? <Text style={s.gymClosedTiny}>Closed</Text>
-            : day.openGym.allowed ? (
-              <View style={s.gymOpenTinyRow}>
-                <View style={[s.dot, { backgroundColor: Colors.green }]} />
-                <Text style={s.gymOpenTiny}>{day.openGym.slots.map(sl => `${sl.start}–${sl.end}`).join(', ')}</Text>
-              </View>
-            ) : <View style={[s.dot, { backgroundColor: Colors.textFaint }]} />
+        <View style={s.futureDayRight}>
+          {day.gymClosed ? <Text style={s.closedText}>Closed</Text>
+            : day.openGym.allowed ? <View style={[s.statusDot, {backgroundColor:'#22c55e'}]} />
+            : <View style={[s.statusDot, {backgroundColor:'#3f3f46'}]} />
           }
           <Text style={[s.chevron, expanded && s.chevronUp]}>›</Text>
         </View>
       </TouchableOpacity>
       {expanded && (
-        <View>
-          <OpenGymSection day={day} />
+        <>
+          <OpenGymRow day={day} />
           {classEvents.length > 0 && (
-            <View>
-              <View style={s.eventsHeader}><Text style={s.eventsLabel}>CLASSES</Text></View>
-              {classEvents.map(ev => <ClassRow key={ev.id} ev={ev} bookingId={bookingId} onBook={onBook} onCancel={onCancel} />)}
-            </View>
+            <>
+              <View style={s.eventsLabel}><Text style={s.eventsLabelText}>CLASSES</Text></View>
+              {classEvents.map(ev => <ClassRow key={ev.id} ev={ev} bookingId={bookingId} hasFamily={hasFamily} onBook={onBook} onCancel={onCancel} />)}
+            </>
           )}
           {ptEvents.length > 0 && (
-            <View>
-              <View style={s.eventsHeader}><Text style={s.eventsLabel}>YOUR PT SESSIONS</Text></View>
+            <>
+              <View style={s.eventsLabel}><Text style={s.eventsLabelText}>PT SESSIONS</Text></View>
               {ptEvents.map(ev => <PtRow key={ev.id} ev={ev} />)}
-            </View>
+            </>
           )}
-          {classEvents.length === 0 && ptEvents.length === 0 && <Text style={s.noEvents}>No classes or sessions scheduled</Text>}
-        </View>
+          {classEvents.length === 0 && ptEvents.length === 0 && <Text style={s.noEventsText}>No classes or sessions scheduled</Text>}
+        </>
       )}
     </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  content: { padding: 16, paddingBottom: 40, gap: 16 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.bg },
-  toast: { padding: 12, borderRadius: 10, marginBottom: 4 },
-  toastOk: { backgroundColor: 'rgba(20,83,45,0.8)', borderWidth: 1, borderColor: Colors.greenDim },
-  toastErr: { backgroundColor: 'rgba(69,10,10,0.8)', borderWidth: 1, borderColor: Colors.red },
-  toastText: { fontSize: 13, fontWeight: '600' },
-  header: { gap: 8 },
-  greeting: { fontSize: 22, fontWeight: '800', color: Colors.text },
-  planRow: { flexDirection: 'row' },
-  planBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  planBadgeName: { color: Colors.textSub, fontSize: 13 },
-  planStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  planStatusText: { color: Colors.textSub, fontSize: 12 },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  qrCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 18, gap: 10 },
-  qrInner: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  qrImage: { width: 80, height: 80, borderRadius: 8, backgroundColor: Colors.white },
-  qrName: { color: Colors.white, fontWeight: '700', fontSize: 15 },
-  qrId: { color: Colors.textFaint, fontSize: 11, fontFamily: 'monospace' },
-  qrPlanRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  qrPlanText: { color: Colors.textSub, fontSize: 12 },
-  qrHint: { color: '#3f3f46', fontSize: 11, textAlign: 'center' },
-  section: { gap: 8 },
-  sectionLabel: { color: Colors.textFaint, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  dayCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, overflow: 'hidden' },
-  dayCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  todayBadge: { backgroundColor: Colors.white, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  todayBadgeText: { color: Colors.bg, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  dayCardDate: { color: Colors.text, fontWeight: '600', fontSize: 16 },
-  futureHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12 },
-  futureTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  futureDateText: { color: Colors.text, fontSize: 14, fontWeight: '600' },
-  futureBadges: { flexDirection: 'row', gap: 4 },
-  countBadge: { backgroundColor: Colors.surfaceHigh, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  countBadgeText: { color: Colors.textSub, fontSize: 10 },
-  countBadgePurple: { backgroundColor: Colors.purpleBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  countBadgePurpleText: { color: Colors.purpleText, fontSize: 10 },
-  futureRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  gymClosedTiny: { color: Colors.red, fontSize: 10 },
-  gymOpenTinyRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  gymOpenTiny: { color: Colors.textMuted, fontSize: 10 },
-  chevron: { color: Colors.textFaint, fontSize: 18, transform: [{ rotate: '90deg' }] },
+  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  content: { paddingBottom: 48 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a' },
+
+  // Toast
+  toast: { marginHorizontal: 16, marginTop: 8, padding: 12, borderRadius: 12 },
+  toastOk: { backgroundColor: 'rgba(20,83,45,0.9)', borderWidth: 1, borderColor: '#166534' },
+  toastErr: { backgroundColor: 'rgba(127,29,29,0.9)', borderWidth: 1, borderColor: '#991b1b' },
+  toastText: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+
+  // Header
+  greeting: { fontSize: 16, color: '#a0a0a0', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12 },
+  greetingName: { fontSize: 16, color: '#ffffff', fontWeight: '800' },
+  planPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  planPillText: { fontSize: 11, fontWeight: '700' },
+
+  // Member Card
+  memberCard: { marginHorizontal: 16, backgroundColor: '#141414', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#1e1e1e', gap: 14 },
+  memberCardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  memberAvatar: { width: 52, height: 52, borderRadius: 26 },
+  memberAvatarPlaceholder: { backgroundColor: '#2a2a2a', justifyContent: 'center', alignItems: 'center' },
+  memberAvatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  memberNameBlock: { flex: 1, gap: 3 },
+  memberName: { color: '#ffffff', fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
+  memberIdText: { color: '#71717a', fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  memberPlanRow: { flexDirection: 'row', marginTop: 2 },
+  qrThumb: { backgroundColor: '#ffffff', borderRadius: 10, padding: 4, width: 60, height: 60, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  qrThumbImage: { width: 52, height: 52, borderRadius: 4 },
+  memberCardDivider: { height: 1, backgroundColor: '#1e1e1e' },
+  memberCardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  qrHint: { fontSize: 11, color: '#3f3f46', flex: 1 },
+  walletBadge: { width: 130, height: 42 },
+  walletGenerating: { width: 130, height: 42, backgroundColor: '#1a1a1a', borderRadius: 8, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#3f3f46' },
+  walletGeneratingText: { color: '#a0a0a0', fontSize: 11 },
+
+  // Sections
+  section: { paddingHorizontal: 16, paddingTop: 20, gap: 8 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#a1a1aa', letterSpacing: 1.2 },
+
+  // List Card (family)
+  listCard: { backgroundColor: '#1a1a1a', borderRadius: 16, overflow: 'hidden' },
+  divider: { height: 1, backgroundColor: '#2a2a2a', marginLeft: 68 },
+
+  // Family
+  familyCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a1a', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#2a2a2a', gap: 12 },
+  familyAvatarWrap: {},
+  familyAvatarImg: { width: 44, height: 44, borderRadius: 22 },
+  familyAvatarImgPlaceholder: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#2a2a2a', justifyContent: 'center', alignItems: 'center' },
+  familyAvatarText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  familyInfo: { flex: 1, gap: 2, minWidth: 0 },
+  familyName: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
+  familyMeta: { fontSize: 12, color: '#a1a1aa' },
+  familyNext: { fontSize: 12, color: '#22c55e', marginTop: 2 },
+  familyManageArrow: { color: '#3f3f46', fontSize: 22 },
+
+  // Day Cards
+  dayCard: { backgroundColor: '#1a1a1a', borderRadius: 16, overflow: 'hidden' },
+  dayCardMargin: { marginTop: 8 },
+  dayCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderBottomWidth: 1, borderBottomColor: '#2a2a2a' },
+  todayBadge: { backgroundColor: '#ffffff', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  todayBadgeText: { color: '#0a0a0a', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  dayCardDate: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
+
+  // Future day header
+  futureDayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14 },
+  futureDayLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  futureDayDate: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
+  futureBadges: { flexDirection: 'row', gap: 6 },
+  countBadge: { backgroundColor: '#2a2a2a', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  countBadgeText: { color: '#a0a0a0', fontSize: 11, fontWeight: '600' },
+  countBadgePurple: { backgroundColor: 'rgba(139,92,246,0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  countBadgePurpleText: { color: '#a78bfa', fontSize: 11, fontWeight: '600' },
+  futureDayRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  closedText: { fontSize: 12, color: '#ef4444' },
+  chevron: { fontSize: 20, color: '#a1a1aa', transform: [{ rotate: '90deg' }] },
   chevronUp: { transform: [{ rotate: '-90deg' }] },
-  gymRow: { padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  gymOpen: { backgroundColor: 'rgba(20,83,45,0.1)' },
-  gymClosed: { color: Colors.red, fontSize: 13, fontWeight: '600' },
-  gymOpenLabel: { color: Colors.greenText, fontSize: 12, fontWeight: '600', marginBottom: 6 },
-  gymClosedLabel: { color: Colors.textFaint, fontSize: 12, marginBottom: 4 },
-  slotRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
-  slotBadge: { backgroundColor: Colors.greenBg, borderWidth: 1, borderColor: 'rgba(22,163,74,0.4)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  slotText: { color: Colors.greenText, fontSize: 11 },
-  slotBadgeDim: { backgroundColor: Colors.surfaceHigh, borderWidth: 1, borderColor: Colors.borderHigh, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  slotTextDim: { color: Colors.textMuted, fontSize: 11 },
-  eventsHeader: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 2 },
-  eventsLabel: { color: Colors.textFaint, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  eventRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderTopWidth: 1, borderTopColor: 'rgba(39,39,42,0.5)', gap: 10 },
-  ptRow: { backgroundColor: 'rgba(59,7,100,0.08)' },
-  eventBar: { width: 3, height: '100%', borderRadius: 2, alignSelf: 'stretch', minHeight: 40 },
-  eventInfo: { flex: 1, gap: 2 },
+
+  // Gym rows
+  gymRow: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#2a2a2a' },
+  gymOpenRow: { backgroundColor: 'rgba(34,197,94,0.05)' },
+  gymClosedText: { fontSize: 13, color: '#ef4444', fontWeight: '600' },
+  gymOpenLabel: { fontSize: 13, color: '#4ade80', fontWeight: '600', marginBottom: 6 },
+  gymNotAvailText: { fontSize: 13, color: '#a1a1aa' },
+  slotRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  slotBadge: { backgroundColor: 'rgba(34,197,94,0.15)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  slotText: { color: '#4ade80', fontSize: 12 },
+  gymLockedRow: { gap: 6 },
+  slotBadgeLocked: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(239,68,68,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  gymLockIcon: { fontSize: 10 },
+  slotTextLocked: { color: '#f87171', fontSize: 12 },
+  upgradeBtn: { alignSelf: 'flex-start', backgroundColor: 'rgba(245,158,11,0.15)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.4)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, marginTop: 6 },
+  upgradeBtnText: { color: '#f59e0b', fontSize: 14, fontWeight: '700' },
+
+  // Events
+  eventsLabel: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 2 },
+  eventsLabelText: { fontSize: 10, color: '#a1a1aa', fontWeight: '700', letterSpacing: 1 },
+  eventRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderTopWidth: 1, borderTopColor: 'rgba(42,42,42,0.6)', gap: 10 },
+  ptRowBg: { backgroundColor: 'rgba(139,92,246,0.05)' },
+  eventBar: { width: 3, alignSelf: 'stretch', borderRadius: 2, minHeight: 40 },
+  eventInfo: { flex: 1, gap: 3 },
   eventTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  eventTitle: { color: Colors.text, fontSize: 14, fontWeight: '600' },
-  eventTime: { color: Colors.textMuted, fontSize: 12 },
-  spots: { color: Colors.textFaint, fontSize: 11 },
-  tagGreen: { backgroundColor: Colors.greenBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
-  tagGreenText: { color: Colors.greenText, fontSize: 10 },
-  tagAmber: { backgroundColor: Colors.amberBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
-  tagAmberText: { color: Colors.amberText, fontSize: 10 },
-  tagPurple: { backgroundColor: Colors.purpleBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
-  tagPurpleText: { color: Colors.purpleText, fontSize: 10 },
+  eventTitle: { fontSize: 14, fontWeight: '600', color: '#ffffff' },
+  eventMeta: { fontSize: 12, color: '#a1a1aa' },
+  spotsText: { fontSize: 11, color: '#a1a1aa' },
   eventAction: { alignItems: 'flex-end' },
-  btnWhite: { backgroundColor: Colors.white, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  btnWhiteText: { color: Colors.bg, fontSize: 12, fontWeight: '600' },
-  btnGrey: { backgroundColor: Colors.surfaceHigh, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  btnGreyText: { color: Colors.textSub, fontSize: 12 },
-  fullText: { color: Colors.textFaint, fontSize: 12 },
-  naText: { color: Colors.textFaint, fontSize: 11, textAlign: 'right', maxWidth: 90 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  statusGreen: { backgroundColor: Colors.greenBg },
-  statusAmber: { backgroundColor: Colors.amberBg },
-  statusGrey: { backgroundColor: Colors.surfaceHigh },
-  statusText: { fontSize: 10, fontWeight: '700' },
-  noEvents: { color: Colors.textFaint, fontSize: 12, textAlign: 'center', padding: 12 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
-  modalBox: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, alignItems: 'center', gap: 10, marginHorizontal: 24 },
-  qrModalImage: { width: 240, height: 240, borderRadius: 12, backgroundColor: Colors.white },
-  modalName: { color: Colors.white, fontWeight: '700', fontSize: 16 },
-  modalId: { color: Colors.textFaint, fontSize: 12, fontFamily: 'monospace' },
-  modalClose: { backgroundColor: Colors.surfaceHigh, paddingHorizontal: 24, paddingVertical: 8, borderRadius: 8, marginTop: 4 },
-  modalCloseText: { color: Colors.text, fontSize: 13, fontWeight: '600' },
-  walletBtn: { backgroundColor: Colors.black, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, marginTop: 4 },
-  walletBtnText: { color: Colors.white, fontSize: 13, fontWeight: '600' },
+  noEventsText: { fontSize: 13, color: '#a1a1aa', textAlign: 'center', padding: 14 },
+
+  // Tags
+  tagGreen: { backgroundColor: 'rgba(34,197,94,0.15)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  tagGreenText: { color: '#4ade80', fontSize: 10, fontWeight: '600' },
+  tagAmber: { backgroundColor: 'rgba(245,158,11,0.15)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  tagAmberText: { color: '#fbbf24', fontSize: 10, fontWeight: '600' },
+  tagPurple: { backgroundColor: 'rgba(139,92,246,0.2)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  tagPurpleText: { color: '#a78bfa', fontSize: 10, fontWeight: '600' },
+
+  // Buttons
+  btnWhite: { backgroundColor: '#ffffff', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
+  btnWhiteText: { color: '#0a0a0a', fontWeight: '700', fontSize: 13 },
+  btnGrey: { backgroundColor: '#2a2a2a', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
+  btnGreyText: { color: '#a0a0a0', fontSize: 13, fontWeight: '600' },
+  naText: { color: '#a1a1aa', fontSize: 11, textAlign: 'right' },
+
+  // PT status
+  statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  statusGreen: { backgroundColor: 'rgba(34,197,94,0.15)' },
+  statusAmber: { backgroundColor: 'rgba(245,158,11,0.15)' },
+  statusGrey: { backgroundColor: '#2a2a2a' },
+  statusPillText: { fontSize: 10, fontWeight: '700', color: '#ffffff' },
+
+  // QR Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
+  modalBox: { backgroundColor: '#1a1a1a', borderRadius: 24, padding: 28, alignItems: 'center', gap: 10, marginHorizontal: 24 },
+  qrModalImage: { width: 260, height: 260, borderRadius: 12, backgroundColor: '#ffffff' },
+  modalName: { fontSize: 18, fontWeight: '700', color: '#ffffff' },
+  modalId: { fontSize: 12, color: '#a1a1aa', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  modalClose: { backgroundColor: '#2a2a2a', paddingHorizontal: 28, paddingVertical: 10, borderRadius: 10, marginTop: 6 },
+  modalCloseText: { color: '#ffffff', fontSize: 14, fontWeight: '600' },
+});
+
+const m = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#1a1a1a', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%' },
+  header: { padding: 20, borderBottomWidth: 1, borderBottomColor: '#2a2a2a' },
+  headerLabel: { fontSize: 10, fontWeight: '700', color: '#a1a1aa', letterSpacing: 1, marginBottom: 4 },
+  headerClass: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
+  headerMeta: { fontSize: 12, color: '#a0a0a0', marginTop: 2 },
+  list: { maxHeight: 320 },
+  row: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, borderBottomWidth: 1, borderBottomColor: '#2a2a2a22' },
+  rowSelected: { backgroundColor: '#2a2a2a' },
+  rowDisabled: { opacity: 0.5 },
+  avatar: { width: 44, height: 44, borderRadius: 22 },
+  avatarPlaceholder: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#2a2a2a', justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  rowInfo: { flex: 1, gap: 2 },
+  rowName: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
+  rowNameDimmed: { color: '#a1a1aa' },
+  rowSub: { fontSize: 12, color: '#a1a1aa' },
+  rowElig: { fontSize: 11, color: '#a1a1aa', marginTop: 2 },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#3f3f46', justifyContent: 'center', alignItems: 'center' },
+  radioSelected: { borderColor: '#ffffff' },
+  radioInner: { width: 11, height: 11, borderRadius: 6, backgroundColor: '#ffffff' },
+  footer: { flexDirection: 'row', padding: 16, gap: 12, borderTopWidth: 1, borderTopColor: '#2a2a2a' },
+  cancelBtn: { paddingHorizontal: 16, paddingVertical: 14, justifyContent: 'center' },
+  cancelBtnText: { color: '#a0a0a0', fontSize: 14 },
+  confirmBtn: { flex: 1, backgroundColor: '#ffffff', padding: 14, borderRadius: 12, alignItems: 'center' },
+  confirmBtnDisabled: { backgroundColor: '#2a2a2a' },
+  confirmBtnText: { color: '#0a0a0a', fontWeight: '700', fontSize: 15 },
 });
