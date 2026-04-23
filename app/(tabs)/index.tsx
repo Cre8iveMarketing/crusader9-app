@@ -119,16 +119,9 @@ export default function Dashboard() {
     try {
       if (ev.planPrice !== null && ev.planPrice > 0) {
         const bookRes = await apiPost('/classes/' + ev.id + '/book', { pending: true, ...(forMemberId && { forMemberId }) });
-        Alert.alert('Step 1 OK', `bookingId: ${bookRes?.bookingId}`);
         const intentRes = await apiPost('/stripe/payment-intent', { type: 'class_booking', classId: ev.id, bookingId: bookRes.bookingId });
-        Alert.alert('Step 2 OK', `secret: ${intentRes?.clientSecret?.slice(0, 20)}`);
         const { error: initError } = await initPaymentSheet({ paymentIntentClientSecret: intentRes.clientSecret, merchantDisplayName: 'Crusader 9 Boxing', style: 'alwaysDark', returnURL: 'crusader9://stripe-success' });
-        if (initError) {
-          Alert.alert('Step 3 failed', `code=${initError.code} message=${initError.message}`);
-          return;
-        }
-        Alert.alert('Step 3 OK', 'Sheet initialised');
-        Alert.alert('Step 4', 'About to present');
+        if (initError) { showToast(initError.message, false); return; }
         const { error: presentError } = await presentPaymentSheet();
         if (presentError) {
           Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
