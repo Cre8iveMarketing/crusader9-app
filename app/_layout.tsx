@@ -1,10 +1,16 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
 import { AuthProvider } from '@/context/AuthContext';
 import { Colors } from '@/constants/colors';
 import { StripeProvider } from '@stripe/stripe-react-native';
 
 export default function RootLayout() {
+  useEffect(() => {
+    Notifications.requestPermissionsAsync();
+  }, []);
+
   return (
     <StripeProvider
       publishableKey="pk_live_51TI63MJFmkiQ7SacoJWQpo0agtz40yqGqyxLJhfFg5dhQ53XZ56IpF6r3A7UqrUYx1xvpO03BxWcKjMtzRjg1blv004HjLtRg6"
