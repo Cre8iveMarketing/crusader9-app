@@ -39,7 +39,7 @@ export default function ProfileFamily() {
     try {
       const token = await getToken();
       if (!token) throw new Error('Not logged in');
-      const url = `https://app.crusader9.co.uk/api/member/wallet?token=${token}&childId=${child.id}`;
+      const url = `https://app.crusader9.co.uk/api/member/wallet?token=${token}&childId=${child.id}&returnUrl=crusader9://`;
       await Linking.openURL(url);
     } catch (e: any) {
       Alert.alert('Error', 'Could not open Apple Wallet. Please try again.');
