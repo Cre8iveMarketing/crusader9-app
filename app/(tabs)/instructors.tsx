@@ -120,16 +120,23 @@ export default function Instructors() {
         notes: '',
         ...(forMemberId && { forMemberId }),
       });
+      Alert.alert('Step 1 OK', `ptBookingId: ${res?.id}`);
       const price = duration === 30 && detail?.rate30Min > 0 ? detail.rate30Min : detail?.hourlyRate;
       if (price > 0) {
         const intentRes = await apiPost('/stripe/payment-intent', { type: 'pt_booking', ptBookingId: res.id });
+        Alert.alert('Step 2 OK', `secret: ${intentRes?.clientSecret?.slice(0, 20)}`);
         const { error: initError } = await initPaymentSheet({
           paymentIntentClientSecret: intentRes.clientSecret,
           merchantDisplayName: 'Crusader 9 Boxing',
           style: 'alwaysDark',
           returnURL: 'crusader9://stripe-success',
         });
-        if (initError) { Alert.alert('Error', initError.message); return; }
+        if (initError) {
+          Alert.alert('Step 3 failed', `code=${initError.code} message=${initError.message}`);
+          return;
+        }
+        Alert.alert('Step 3 OK', 'Sheet initialised');
+        Alert.alert('Step 4', 'About to present');
         const { error: presentError } = await presentPaymentSheet();
         if (presentError) {
           Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
