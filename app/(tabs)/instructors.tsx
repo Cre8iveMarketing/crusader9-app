@@ -128,6 +128,7 @@ export default function Instructors() {
           merchantDisplayName: 'Crusader 9 Boxing',
           style: 'alwaysDark',
           returnURL: 'crusader9://stripe-success',
+          applePay: { merchantCountryCode: 'GB' },
         });
         if (initError) { Alert.alert('Error', initError.message); return; }
         const { error: presentError } = await presentPaymentSheet();

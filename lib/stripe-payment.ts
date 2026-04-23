@@ -20,6 +20,7 @@ export async function payForClass(
       merchantDisplayName: 'Crusader 9 Boxing',
       style: 'alwaysDark',
       returnURL: 'crusader9://stripe-success',
+      applePay: { merchantCountryCode: 'GB' },
     });
     if (initError) return { success: false, error: initError.message };
 
@@ -55,6 +56,7 @@ export async function payForPT(
       merchantDisplayName: 'Crusader 9 Boxing',
       style: 'alwaysDark',
       returnURL: 'crusader9://stripe-success',
+      applePay: { merchantCountryCode: 'GB' },
     });
     if (initError) return { success: false, error: initError.message };
 
@@ -89,6 +91,7 @@ export async function payForDayPass(
       merchantDisplayName: 'Crusader 9 Boxing',
       style: 'alwaysDark',
       returnURL: 'crusader9://stripe-success',
+      applePay: { merchantCountryCode: 'GB' },
     });
     if (initError) return { success: false, error: initError.message };
 
