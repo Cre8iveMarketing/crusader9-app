@@ -9,7 +9,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "co.uk.crusader9.app",
-      "icon": "./assets/icon.png"
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
