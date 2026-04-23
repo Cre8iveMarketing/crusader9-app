@@ -23,38 +23,27 @@ export async function registerPushToken(authToken: string) {
       console.log('Push: skipping - not a real device');
       return;
     }
-
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     console.log('Push: existing permission status:', existingStatus);
-
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-
     console.log('Push: final permission status:', finalStatus);
     if (finalStatus !== 'granted') return;
-
     const projectId = '6e01da50-f7de-4634-873b-b257b0c1fe31';
-    console.log('Push: getting token for projectId:', projectId);
-
     const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
     console.log('Push: got token:', tokenData.data);
-
     const response = await fetch('https://app.crusader9.co.uk/api/member/push-token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
+        'Authorization': `Bearer ${authToken}`
       },
-      body: JSON.stringify({
-        token: tokenData.data,
-        platform: Platform.OS,
-      }),
+      body: JSON.stringify({ token: tokenData.data, platform: Platform.OS })
     });
-
-    console.log('Push: server response status:', response.status);
+    console.log('Push: server response:', response.status);
   } catch (e: any) {
     console.error('Push registration failed:', e?.message ?? e);
     Alert.alert('Push Debug', e?.message ?? JSON.stringify(e));
