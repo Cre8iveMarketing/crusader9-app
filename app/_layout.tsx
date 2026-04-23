@@ -6,7 +6,10 @@ import { StripeProvider } from '@stripe/stripe-react-native';
 
 export default function RootLayout() {
   return (
-    <StripeProvider publishableKey="pk_live_51TI63MJFmkiQ7SacoJWQpo0agtz40yqGqyxLJhfFg5dhQ53XZ56IpF6r3A7UqrUYx1xvpO03BxWcKjMtzRjg1blv004HjLtRg6">
+    <StripeProvider
+      publishableKey="pk_live_51TI63MJFmkiQ7SacoJWQpo0agtz40yqGqyxLJhfFg5dhQ53XZ56IpF6r3A7UqrUYx1xvpO03BxWcKjMtzRjg1blv004HjLtRg6"
+      merchantIdentifier="merchant.co.uk.crusader9.app"
+    >
       <AuthProvider>
         <StatusBar style="light" />
         <Stack screenOptions={{
