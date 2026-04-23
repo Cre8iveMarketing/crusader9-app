@@ -131,7 +131,10 @@ export default function Instructors() {
         });
         if (initError) { Alert.alert('Error', initError.message); return; }
         const { error: presentError } = await presentPaymentSheet();
-        if (presentError) { if (presentError.code !== 'Canceled') Alert.alert('Payment failed', presentError.message); return; }
+        if (presentError) {
+          Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+          return;
+        }
         await apiPost('/stripe/confirm-booking', {
           paymentIntentId: intentRes.clientSecret.split('_secret_')[0],
           type: 'pt_booking',

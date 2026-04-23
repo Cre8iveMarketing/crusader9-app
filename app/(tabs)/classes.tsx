@@ -90,7 +90,10 @@ export default function Classes() {
         const { error: initError } = await initPaymentSheet({ paymentIntentClientSecret: intentRes.clientSecret, merchantDisplayName: 'Crusader 9 Boxing', style: 'alwaysDark', returnURL: 'crusader9://stripe-success' });
         if (initError) { Alert.alert('Error', initError.message); return; }
         const { error: presentError } = await presentPaymentSheet();
-        if (presentError) { if (presentError.code !== 'Canceled') Alert.alert('Payment failed', presentError.message); return; }
+        if (presentError) {
+          Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+          return;
+        }
         await apiPost('/stripe/confirm-booking', { paymentIntentId: intentRes.clientSecret.split('_secret_')[0], type: 'class_booking', bookingId: bookRes.bookingId });
         await refreshMember();
         await load();
