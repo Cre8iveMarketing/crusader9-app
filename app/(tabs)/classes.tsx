@@ -87,7 +87,7 @@ export default function Classes() {
       if (isPaid) {
         const bookRes = await apiPost(`/classes/${cls.id}/book`, { pending: true, ...(forMemberId && { forMemberId }) });
         const intentRes = await apiPost('/stripe/payment-intent', { type: 'class_booking', classId: cls.id, bookingId: bookRes.bookingId });
-        const { error: initError } = await initPaymentSheet({ paymentIntentClientSecret: intentRes.clientSecret, merchantDisplayName: 'Crusader 9 Boxing', style: 'alwaysDark' });
+        const { error: initError } = await initPaymentSheet({ paymentIntentClientSecret: intentRes.clientSecret, merchantDisplayName: 'Crusader 9 Boxing', style: 'alwaysDark', returnURL: 'crusader9://stripe-success' });
         if (initError) { Alert.alert('Error', initError.message); return; }
         const { error: presentError } = await presentPaymentSheet();
         if (presentError) { if (presentError.code !== 'Canceled') Alert.alert('Payment failed', presentError.message); return; }

@@ -19,6 +19,7 @@ export async function payForClass(
       paymentIntentClientSecret: intentRes.clientSecret,
       merchantDisplayName: 'Crusader 9 Boxing',
       style: 'alwaysDark',
+      returnURL: 'crusader9://stripe-success',
     });
     if (initError) return { success: false, error: initError.message };
 
@@ -53,6 +54,7 @@ export async function payForPT(
       paymentIntentClientSecret: intentRes.clientSecret,
       merchantDisplayName: 'Crusader 9 Boxing',
       style: 'alwaysDark',
+      returnURL: 'crusader9://stripe-success',
     });
     if (initError) return { success: false, error: initError.message };
 
@@ -86,6 +88,7 @@ export async function payForDayPass(
       paymentIntentClientSecret: intentRes.clientSecret,
       merchantDisplayName: 'Crusader 9 Boxing',
       style: 'alwaysDark',
+      returnURL: 'crusader9://stripe-success',
     });
     if (initError) return { success: false, error: initError.message };
 

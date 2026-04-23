@@ -117,6 +117,7 @@ export function DayPassPurchase({ gymSchedule, closedDates, forMemberId, showFam
         paymentIntentClientSecret: intentRes.clientSecret,
         merchantDisplayName: 'Crusader 9 Boxing',
         style: 'alwaysDark',
+        returnURL: 'crusader9://stripe-success',
       });
       if (initError) { Alert.alert('Error', initError.message); return; }
       const { error: presentError } = await presentPaymentSheet();
