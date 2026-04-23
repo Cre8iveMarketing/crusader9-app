@@ -12,6 +12,9 @@
       "icon": "./assets/icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.developer.in-app-payments": ["merchant.co.uk.crusader9.app"]
       }
     },
     "android": {
