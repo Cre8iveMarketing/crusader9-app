@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal, Image } from 'react-native';
-import { apiFetch, apiPost } from '@/lib/api';
+import { apiFetch, apiPost, apiDelete } from '@/lib/api';
 import { Colors } from '@/constants/colors';
 import { format, addDays } from 'date-fns';
 import { useStripe } from '@stripe/stripe-react-native';
@@ -133,7 +133,11 @@ export default function Instructors() {
         if (initError) { Alert.alert('Error', initError.message); return; }
         const { error: presentError } = await presentPaymentSheet();
         if (presentError) {
-          Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+          if (presentError.code === 'Canceled') {
+            apiDelete(`/pt-bookings/${res.id}`).catch(() => {});
+          } else {
+            Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+          }
           return;
         }
         await apiPost('/stripe/confirm-booking', {

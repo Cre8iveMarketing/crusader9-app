@@ -91,7 +91,11 @@ export default function Classes() {
         if (initError) { Alert.alert('Error', initError.message); return; }
         const { error: presentError } = await presentPaymentSheet();
         if (presentError) {
-          Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+          if (presentError.code === 'Canceled') {
+            apiDelete(`/classes/${cls.id}/book?pending=1`).catch(() => {});
+          } else {
+            Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+          }
           return;
         }
         await apiPost('/stripe/confirm-booking', { paymentIntentId: intentRes.clientSecret.split('_secret_')[0], type: 'class_booking', bookingId: bookRes.bookingId });
