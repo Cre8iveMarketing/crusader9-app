@@ -13,11 +13,12 @@ export default function Classes() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDay, setSelectedDay] = useState(0);
-  const [booking, setBooking] = useState<string | null>(null);
+  const [activeClassId, setActiveClassId] = useState<string | null>(null);
   const [family, setFamily] = useState<any[]>([]);
   const [bookModal, setBookModal] = useState<{ cls: any; candidates: any[] } | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
   const [eligibility, setEligibility] = useState<Record<string, any>>({});
+  const [confirming, setConfirming] = useState(false);
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const days = Array.from({ length: 14 }, (_, i) => addDays(startOfDay(new Date()), i));
 
@@ -55,7 +56,7 @@ export default function Classes() {
   });
 
   async function handleBook(cls: any) {
-    if (booking === cls.id) return;
+    if (activeClassId === cls.id) return;
 
     // If parent has children, show member picker
     if (family.length > 0 && member) {
@@ -82,7 +83,7 @@ export default function Classes() {
   }
 
   async function proceedWithBooking(cls: any, forMemberId: string | null) {
-    setBooking(cls.id);
+    setActiveClassId(cls.id);
     try {
       const isPaid = cls.planPrice !== null && cls.planPrice !== undefined && cls.planPrice > 0;
       if (isPaid) {
@@ -110,7 +111,7 @@ export default function Classes() {
         } catch (e: any) {
           Alert.alert('Payment error', e?.message ?? String(e));
         } finally {
-          setBooking(null);
+          setActiveClassId(null);
         }
         if (!presentSucceeded) return;
 
@@ -125,15 +126,21 @@ export default function Classes() {
         Alert.alert('Booked!', `Booking confirmed!`);
       }
     } catch (e: any) { Alert.alert('Error', e.message || 'Booking failed'); }
-    finally { setBooking(null); }
+    finally { setActiveClassId(null); }
   }
 
   async function handleModalConfirm() {
+    if (confirming) return;
     if (!bookModal || !selectedCandidate) return;
-    const candidate = bookModal.candidates.find(c => c.id === selectedCandidate);
-    const forMemberId = candidate?.isSelf ? null : selectedCandidate;
-    setBookModal(null);
-    await proceedWithBooking(bookModal.cls, forMemberId);
+    setConfirming(true);
+    try {
+      const candidate = bookModal.candidates.find(c => c.id === selectedCandidate);
+      const forMemberId = candidate?.isSelf ? null : selectedCandidate;
+      setBookModal(null);
+      await proceedWithBooking(bookModal.cls, forMemberId);
+    } finally {
+      setConfirming(false);
+    }
   }
 
   async function handleCancel(cls: any) {
@@ -163,13 +170,13 @@ export default function Classes() {
   }
 
   async function confirmCancel(cls: any, bookingId: string, memberId: string | null) {
-    setBooking(cls.id);
+    setActiveClassId(cls.id);
     try {
       await apiDelete(`/classes/${cls.id}/book`);
       await refreshMember();
       await load();
     } catch (e: any) { Alert.alert('Error', e.message); }
-    finally { setBooking(null); }
+    finally { setActiveClassId(null); }
   }
 
   function ClassCard({ cls }: { cls: any }) {
@@ -177,7 +184,7 @@ export default function Classes() {
     const typeColor = cls.classType?.color ?? cls.ClassType?.color ?? Colors.border;
     const duration = cls.classType?.duration ?? cls.ClassType?.duration ?? 60;
     const isFull = cls.spotsLeft <= 0 && !cls.isBooked;
-    const isLoading = booking === cls.id;
+    const isLoading = activeClassId === cls.id;
     return (
       <View style={[s.card, cls.isBooked && s.cardBooked, { borderLeftColor: typeColor }]}>
         <View style={s.cardHeader}>

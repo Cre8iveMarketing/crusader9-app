@@ -61,13 +61,14 @@ export default function Dashboard() {
   const [family, setFamily] = useState<Child[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [bookingId, setBookingId] = useState<string | null>(null);
+  const [activeClassId, setActiveClassId] = useState<string | null>(null);
   const [qrModal, setQrModal] = useState(false);
   const [downloadingWallet, setDownloadingWallet] = useState(false);
   const [toast, setToast] = useState<{msg:string;ok:boolean}|null>(null);
   const [bookModal, setBookModal] = useState<{ ev: ClassEvent; candidates: any[] } | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
   const [eligibility, setEligibility] = useState<Record<string, any>>({});
+  const [confirming, setConfirming] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -90,6 +91,7 @@ export default function Dashboard() {
   }
 
   async function handleBook(ev: ClassEvent) {
+    if (activeClassId === ev.id) return;
     // If parent has children, show member picker
     if (family.length > 0 && member) {
       const candidates = [
@@ -115,7 +117,7 @@ export default function Dashboard() {
   }
 
   async function proceedWithBooking(ev: ClassEvent, forMemberId: string | null) {
-    setBookingId(ev.id);
+    setActiveClassId(ev.id);
     try {
       if (ev.planPrice !== null && ev.planPrice > 0) {
         const bookRes = await apiPost('/classes/' + ev.id + '/book', { pending: true, ...(forMemberId && { forMemberId }) });
@@ -142,7 +144,7 @@ export default function Dashboard() {
         } catch (e: any) {
           Alert.alert('Payment error', e?.message ?? String(e));
         } finally {
-          setBookingId(null);
+          setActiveClassId(null);
         }
         if (!presentSucceeded) return;
 
@@ -155,26 +157,32 @@ export default function Dashboard() {
         await loadData();
       }
     } catch (e: any) { showToast(e.message || 'Booking failed', false); }
-    finally { setBookingId(null); }
+    finally { setActiveClassId(null); }
   }
 
   async function handleModalConfirm() {
+    if (confirming) return;
     if (!bookModal || !selectedCandidate) return;
-    const candidate = bookModal.candidates.find(c => c.id === selectedCandidate);
-    const forMemberId = candidate?.isSelf ? null : selectedCandidate;
-    const ev = bookModal.ev;
-    setBookModal(null);
-    await proceedWithBooking(ev, forMemberId);
+    setConfirming(true);
+    try {
+      const candidate = bookModal.candidates.find(c => c.id === selectedCandidate);
+      const forMemberId = candidate?.isSelf ? null : selectedCandidate;
+      const ev = bookModal.ev;
+      setBookModal(null);
+      await proceedWithBooking(ev, forMemberId);
+    } finally {
+      setConfirming(false);
+    }
   }
 
   async function handleCancel(ev: ClassEvent) {
     Alert.alert('Cancel Booking', 'Are you sure?', [
       { text: 'No' },
       { text: 'Cancel booking', style: 'destructive', onPress: async () => {
-        setBookingId(ev.id);
+        setActiveClassId(ev.id);
         try { await apiDelete('/classes/' + ev.id + '/book'); showToast('Booking cancelled', true); await loadData(); }
         catch (e: any) { showToast(e.message || 'Failed', false); }
-        finally { setBookingId(null); }
+        finally { setActiveClassId(null); }
       }},
     ]);
   }
@@ -311,7 +319,7 @@ export default function Dashboard() {
       {todayDay && (
         <View style={s.section}>
           <Text style={s.sectionLabel}>TODAY</Text>
-          <TodayCard day={todayDay} bookingId={bookingId} hasFamily={family.length > 0} onBook={handleBook} onCancel={handleCancel} />
+          <TodayCard day={todayDay} activeClassId={activeClassId} hasFamily={family.length > 0} onBook={handleBook} onCancel={handleCancel} />
         </View>
       )}
 
@@ -320,7 +328,7 @@ export default function Dashboard() {
         <View style={s.section}>
           <Text style={s.sectionLabel}>THIS WEEK</Text>
           {restDays.map(day => (
-            <FutureDayCard key={day.date} day={day} bookingId={bookingId} hasFamily={family.length > 0} onBook={handleBook} onCancel={handleCancel} />
+            <FutureDayCard key={day.date} day={day} activeClassId={activeClassId} hasFamily={family.length > 0} onBook={handleBook} onCancel={handleCancel} />
           ))}
         </View>
       )}
@@ -464,8 +472,8 @@ function OpenGymRow({ day }: { day: DiaryDay }) {
   );
 }
 
-function ClassRow({ ev, bookingId, hasFamily, onBook, onCancel }: { ev: ClassEvent; bookingId: string|null; hasFamily: boolean; onBook: (e:ClassEvent)=>void; onCancel: (e:ClassEvent)=>void }) {
-  const isLoading = bookingId === ev.id;
+function ClassRow({ ev, activeClassId, hasFamily, onBook, onCancel }: { ev: ClassEvent; activeClassId: string|null; hasFamily: boolean; onBook: (e:ClassEvent)=>void; onCancel: (e:ClassEvent)=>void }) {
+  const isLoading = activeClassId === ev.id;
   const isFull = ev.spotsLeft === 0 && !ev.isBooked;
   const barColor = ev.isBooked ? '#22c55e' : ev.includedInPlan ? '#6366f1' : ev.planPrice && ev.planPrice > 0 ? '#f59e0b' : '#3f3f46';
 
@@ -527,7 +535,7 @@ function PtRow({ ev }: { ev: PtEvent }) {
   );
 }
 
-function TodayCard({ day, bookingId, hasFamily, onBook, onCancel }: { day:DiaryDay; bookingId:string|null; hasFamily: boolean; onBook:(e:ClassEvent)=>void; onCancel:(e:ClassEvent)=>void }) {
+function TodayCard({ day, activeClassId, hasFamily, onBook, onCancel }: { day:DiaryDay; activeClassId:string|null; hasFamily: boolean; onBook:(e:ClassEvent)=>void; onCancel:(e:ClassEvent)=>void }) {
   const classEvents = day.events.filter((e): e is ClassEvent => e.type === 'class');
   const ptEvents = day.events.filter((e): e is PtEvent => e.type === 'pt');
   return (
@@ -540,7 +548,7 @@ function TodayCard({ day, bookingId, hasFamily, onBook, onCancel }: { day:DiaryD
       {classEvents.length > 0 && (
         <>
           <View style={s.eventsLabel}><Text style={s.eventsLabelText}>CLASSES</Text></View>
-          {classEvents.map(ev => <ClassRow key={ev.id} ev={ev} bookingId={bookingId} hasFamily={hasFamily} onBook={onBook} onCancel={onCancel} />)}
+          {classEvents.map(ev => <ClassRow key={ev.id} ev={ev} activeClassId={activeClassId} hasFamily={hasFamily} onBook={onBook} onCancel={onCancel} />)}
         </>
       )}
       {ptEvents.length > 0 && (
@@ -556,7 +564,7 @@ function TodayCard({ day, bookingId, hasFamily, onBook, onCancel }: { day:DiaryD
   );
 }
 
-function FutureDayCard({ day, bookingId, hasFamily, onBook, onCancel }: { day:DiaryDay; bookingId:string|null; hasFamily: boolean; onBook:(e:ClassEvent)=>void; onCancel:(e:ClassEvent)=>void }) {
+function FutureDayCard({ day, activeClassId, hasFamily, onBook, onCancel }: { day:DiaryDay; activeClassId:string|null; hasFamily: boolean; onBook:(e:ClassEvent)=>void; onCancel:(e:ClassEvent)=>void }) {
   const [expanded, setExpanded] = useState(false);
   const classEvents = day.events.filter((e): e is ClassEvent => e.type === 'class');
   const ptEvents = day.events.filter((e): e is PtEvent => e.type === 'pt');
@@ -586,7 +594,7 @@ function FutureDayCard({ day, bookingId, hasFamily, onBook, onCancel }: { day:Di
           {classEvents.length > 0 && (
             <>
               <View style={s.eventsLabel}><Text style={s.eventsLabelText}>CLASSES</Text></View>
-              {classEvents.map(ev => <ClassRow key={ev.id} ev={ev} bookingId={bookingId} hasFamily={hasFamily} onBook={onBook} onCancel={onCancel} />)}
+              {classEvents.map(ev => <ClassRow key={ev.id} ev={ev} activeClassId={activeClassId} hasFamily={hasFamily} onBook={onBook} onCancel={onCancel} />)}
             </>
           )}
           {ptEvents.length > 0 && (
