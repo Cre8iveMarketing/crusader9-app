@@ -4,8 +4,6 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { apiFetch } from '@/lib/api';
 import { WithTabBar } from '@/components/WithTabBar';
 import { SvgXml } from 'react-native-svg';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import { getToken } from '@/lib/auth';
 
 const BACK_ARROW = `<svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>`;
@@ -53,17 +51,11 @@ export default function ChildDetail() {
     try {
       const token = await getToken();
       if (!token) throw new Error('Not logged in');
-      const localUri = FileSystem.cacheDirectory + `c9-child-${id}.pkpass`;
-      await FileSystem.downloadAsync(
-        `https://app.crusader9.co.uk/api/member/wallet?childId=${id}`,
-        localUri,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      await Sharing.shareAsync(localUri, {
-        mimeType: 'application/vnd.apple.pkpass',
-        UTI: 'com.apple.pkpass',
-      });
-    } catch (e: any) { Alert.alert('Error', e.message); }
+      const url = `https://app.crusader9.co.uk/api/member/wallet?token=${token}&childId=${id}`;
+      await Linking.openURL(url);
+    } catch (e: any) {
+      Alert.alert('Error', 'Could not open Apple Wallet. Please try again.');
+    }
   }
 
   async function handleGoogleWallet() {

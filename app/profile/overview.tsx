@@ -1,11 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Platform, Modal, Alert, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Platform, Modal, Alert, RefreshControl, Linking } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import { Colors } from '@/constants/colors';
 import { format } from 'date-fns';
 import { WithTabBar } from '@/components/WithTabBar';
@@ -26,18 +24,11 @@ export default function ProfileOverview() {
     try {
       const token = await getToken();
       if (!token) throw new Error('Not logged in');
-      const localUri = FileSystem.cacheDirectory + 'crusader9.pkpass';
-      await FileSystem.downloadAsync(
-        'https://app.crusader9.co.uk/api/member/wallet',
-        localUri,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      await Sharing.shareAsync(localUri, {
-        mimeType: 'application/vnd.apple.pkpass',
-        UTI: 'com.apple.pkpass',
-      });
-    } catch (e: any) { Alert.alert('Error', e.message); }
-    finally { setDownloadingWallet(false); }
+      const url = `https://app.crusader9.co.uk/api/member/wallet?token=${token}`;
+      await Linking.openURL(url);
+    } catch (e: any) {
+      Alert.alert('Error', 'Could not open Apple Wallet. Please try again.');
+    } finally { setDownloadingWallet(false); }
   }
 
   const sub = me?.subscription;

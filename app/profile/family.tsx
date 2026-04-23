@@ -3,8 +3,6 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, RefreshCon
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { apiFetch } from '@/lib/api';
 import { WithTabBar } from '@/components/WithTabBar';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import { getToken } from '@/lib/auth';
 
 function getAge(dob: string | null): number | null {
@@ -41,18 +39,11 @@ export default function ProfileFamily() {
     try {
       const token = await getToken();
       if (!token) throw new Error('Not logged in');
-      const localUri = FileSystem.cacheDirectory + `c9-child-${child.id}.pkpass`;
-      await FileSystem.downloadAsync(
-        `https://app.crusader9.co.uk/api/member/wallet?childId=${child.id}`,
-        localUri,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      await Sharing.shareAsync(localUri, {
-        mimeType: 'application/vnd.apple.pkpass',
-        UTI: 'com.apple.pkpass',
-      });
-    } catch (e: any) { Alert.alert('Error', e.message); }
-    finally { setWalletLoading(null); }
+      const url = `https://app.crusader9.co.uk/api/member/wallet?token=${token}&childId=${child.id}`;
+      await Linking.openURL(url);
+    } catch (e: any) {
+      Alert.alert('Error', 'Could not open Apple Wallet. Please try again.');
+    } finally { setWalletLoading(null); }
   }
 
   return (
