@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getToken, saveToken, deleteToken } from '@/lib/auth';
+import { getToken, saveToken, deleteToken, registerPushToken } from '@/lib/auth';
 import { apiFetch, apiPost } from '@/lib/api';
 
 interface Member {
@@ -45,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function login(email: string, password: string) {
     const { token } = await apiPost('/auth', { email, password });
     await saveToken(token);
+    registerPushToken(token).catch(() => {});
     await loadMember();
   }
 
