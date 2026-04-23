@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { getToken, saveToken, deleteToken, registerPushToken } from '@/lib/auth';
 import { apiFetch, apiPost } from '@/lib/api';
@@ -54,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function login(email: string, password: string) {
     const { token } = await apiPost('/auth', { email, password });
     await saveToken(token);
-    registerPushToken(token).catch(() => {});
+    registerPushToken(token).catch((e) => Alert.alert('Push outer catch', e?.message ?? JSON.stringify(e)));
     await loadMember();
   }
 

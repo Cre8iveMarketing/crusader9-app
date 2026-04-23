@@ -54,7 +54,7 @@ export default function Classes() {
   });
 
   async function handleBook(cls: any) {
-    if (booking) return;
+    if (booking === cls.id) return;
 
     // If parent has children, show member picker
     if (family.length > 0 && member) {
