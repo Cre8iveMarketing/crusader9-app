@@ -1,6 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import * as Notifications from 'expo-notifications';
 import { getToken, saveToken, deleteToken, registerPushToken } from '@/lib/auth';
 import { apiFetch, apiPost } from '@/lib/api';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 interface Member {
   id: string; email: string; name: string; role: string;

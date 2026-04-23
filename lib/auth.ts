@@ -20,12 +20,18 @@ export async function deleteToken() {
 export async function registerPushToken(authToken: string) {
   if (!Device.isDevice) return;
 
-  const { status } = await Notifications.requestPermissionsAsync();
-  if (status !== 'granted') return;
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
 
-  const token = await Notifications.getExpoPushTokenAsync({
-    projectId: '6e01da50-f7de-4634-873b-b257b0c1fe31',
-  });
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+
+  if (finalStatus !== 'granted') return;
+
+  const projectId = '6e01da50-f7de-4634-873b-b257b0c1fe31';
+  const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
 
   await fetch('https://app.crusader9.co.uk/api/member/push-token', {
     method: 'POST',
@@ -34,7 +40,7 @@ export async function registerPushToken(authToken: string) {
       Authorization: `Bearer ${authToken}`,
     },
     body: JSON.stringify({
-      token: token.data,
+      token: tokenData.data,
       platform: Platform.OS,
     }),
   });
