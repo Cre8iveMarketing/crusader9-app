@@ -18,7 +18,6 @@ export default function Classes() {
   const [bookModal, setBookModal] = useState<{ cls: any; candidates: any[] } | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
   const [eligibility, setEligibility] = useState<Record<string, any>>({});
-  const [confirming, setConfirming] = useState(false);
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const days = Array.from({ length: 14 }, (_, i) => addDays(startOfDay(new Date()), i));
 
@@ -130,17 +129,11 @@ export default function Classes() {
   }
 
   async function handleModalConfirm() {
-    if (confirming) return;
     if (!bookModal || !selectedCandidate) return;
-    setConfirming(true);
-    try {
-      const candidate = bookModal.candidates.find(c => c.id === selectedCandidate);
-      const forMemberId = candidate?.isSelf ? null : selectedCandidate;
-      setBookModal(null);
-      await proceedWithBooking(bookModal.cls, forMemberId);
-    } finally {
-      setConfirming(false);
-    }
+    const candidate = bookModal.candidates.find(c => c.id === selectedCandidate);
+    const forMemberId = candidate?.isSelf ? null : selectedCandidate;
+    setBookModal(null);
+    await proceedWithBooking(bookModal.cls, forMemberId);
   }
 
   async function handleCancel(cls: any) {

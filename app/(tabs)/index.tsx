@@ -68,7 +68,6 @@ export default function Dashboard() {
   const [bookModal, setBookModal] = useState<{ ev: ClassEvent; candidates: any[] } | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
   const [eligibility, setEligibility] = useState<Record<string, any>>({});
-  const [confirming, setConfirming] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -161,18 +160,12 @@ export default function Dashboard() {
   }
 
   async function handleModalConfirm() {
-    if (confirming) return;
     if (!bookModal || !selectedCandidate) return;
-    setConfirming(true);
-    try {
-      const candidate = bookModal.candidates.find(c => c.id === selectedCandidate);
-      const forMemberId = candidate?.isSelf ? null : selectedCandidate;
-      const ev = bookModal.ev;
-      setBookModal(null);
-      await proceedWithBooking(ev, forMemberId);
-    } finally {
-      setConfirming(false);
-    }
+    const candidate = bookModal.candidates.find(c => c.id === selectedCandidate);
+    const forMemberId = candidate?.isSelf ? null : selectedCandidate;
+    const ev = bookModal.ev;
+    setBookModal(null);
+    await proceedWithBooking(ev, forMemberId);
   }
 
   async function handleCancel(ev: ClassEvent) {
