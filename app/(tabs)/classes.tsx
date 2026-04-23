@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl, Modal, Image } from 'react-native';
 import { apiFetch, apiPost, apiDelete } from '@/lib/api';
+import { getToken } from '@/lib/auth';
 import { useAuth } from '@/context/AuthContext';
 import { Colors } from '@/constants/colors';
 import { format, addDays, startOfDay } from 'date-fns';
@@ -94,9 +95,13 @@ export default function Classes() {
         try {
           const { error: presentError } = await presentPaymentSheet();
           if (presentError) {
-            if (presentError.code === 'Canceled') {
-              apiDelete(`/classes/${cls.id}/book?pending=1`).catch(() => {});
-            } else {
+            if (presentError.code === 'Canceled' && bookRes?.bookingId) {
+              const token = await getToken();
+              fetch(`https://app.crusader9.co.uk/api/mobile/classes/${cls.id}/booking/${bookRes.bookingId}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+              }).catch(() => {});
+            } else if (presentError.code !== 'Canceled') {
               Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
             }
           } else {
