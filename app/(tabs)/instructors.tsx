@@ -131,15 +131,26 @@ export default function Instructors() {
           applePay: { merchantCountryCode: 'GB' },
         });
         if (initError) { Alert.alert('Error', initError.message); return; }
-        const { error: presentError } = await presentPaymentSheet();
-        if (presentError) {
-          if (presentError.code === 'Canceled') {
-            apiDelete(`/pt-bookings/${res.id}`).catch(() => {});
+
+        let presentSucceeded = false;
+        try {
+          const { error: presentError } = await presentPaymentSheet();
+          if (presentError) {
+            if (presentError.code === 'Canceled') {
+              apiDelete(`/pt-bookings/${res.id}`).catch(() => {});
+            } else {
+              Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+            }
           } else {
-            Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+            presentSucceeded = true;
           }
-          return;
+        } catch (e: any) {
+          Alert.alert('Payment error', e?.message ?? String(e));
+        } finally {
+          setBooking(false);
         }
+        if (!presentSucceeded) return;
+
         await apiPost('/stripe/confirm-booking', {
           paymentIntentId: intentRes.clientSecret.split('_secret_')[0],
           type: 'pt_booking',

@@ -122,15 +122,26 @@ export default function Dashboard() {
         const intentRes = await apiPost('/stripe/payment-intent', { type: 'class_booking', classId: ev.id, bookingId: bookRes.bookingId });
         const { error: initError } = await initPaymentSheet({ paymentIntentClientSecret: intentRes.clientSecret, merchantDisplayName: 'Crusader 9 Boxing', style: 'alwaysDark', returnURL: 'crusader9://stripe-success', applePay: { merchantCountryCode: 'GB' } });
         if (initError) { showToast(initError.message, false); return; }
-        const { error: presentError } = await presentPaymentSheet();
-        if (presentError) {
-          if (presentError.code === 'Canceled') {
-            apiDelete(`/classes/${ev.id}/book?pending=1`).catch(() => {});
+
+        let presentSucceeded = false;
+        try {
+          const { error: presentError } = await presentPaymentSheet();
+          if (presentError) {
+            if (presentError.code === 'Canceled') {
+              apiDelete(`/classes/${ev.id}/book?pending=1`).catch(() => {});
+            } else {
+              Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+            }
           } else {
-            Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+            presentSucceeded = true;
           }
-          return;
+        } catch (e: any) {
+          Alert.alert('Payment error', e?.message ?? String(e));
+        } finally {
+          setBookingId(null);
         }
+        if (!presentSucceeded) return;
+
         await apiPost('/stripe/confirm-booking', { paymentIntentId: intentRes.clientSecret.split('_secret_')[0], type: 'class_booking', bookingId: bookRes.bookingId });
         showToast('Booked!', true);
         await loadData();
