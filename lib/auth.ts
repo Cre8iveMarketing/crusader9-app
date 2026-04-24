@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Alert, Platform } from 'react-native';
+import { Platform } from 'react-native';
 
 const TOKEN_KEY = 'mobile_jwt';
 
@@ -27,24 +27,12 @@ export async function registerPushToken(authToken: string) {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-
-    if (finalStatus !== 'granted') {
-      Alert.alert('Push Debug', `Permission denied: ${finalStatus}`);
-      return;
-    }
+    if (finalStatus !== 'granted') return;
 
     const projectId = '6e01da50-f7de-4634-873b-b257b0c1fe31';
-    let tokenData;
-    try {
-      tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
-    } catch (tokenError: any) {
-      Alert.alert('Push Debug', `getExpoPushToken failed: ${tokenError?.message}`);
-      return;
-    }
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
 
-    Alert.alert('Push Debug', `Token: ${tokenData.data.slice(0, 30)}`);
-
-    const response = await fetch('https://app.crusader9.co.uk/api/member/push-token', {
+    await fetch('https://app.crusader9.co.uk/api/member/push-token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -52,10 +40,7 @@ export async function registerPushToken(authToken: string) {
       },
       body: JSON.stringify({ token: tokenData.data, platform: Platform.OS })
     });
-
-    const responseText = await response.text();
-    Alert.alert('Push server response', `${response.status}: ${responseText}`);
   } catch (e: any) {
-    Alert.alert('Push outer error', e?.message ?? JSON.stringify(e));
+    console.error('Push registration failed:', e?.message ?? e);
   }
 }
