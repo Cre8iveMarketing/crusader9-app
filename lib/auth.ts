@@ -19,22 +19,31 @@ export async function deleteToken() {
 
 export async function registerPushToken(authToken: string) {
   try {
-    if (!Device.isDevice) {
-      console.log('Push: skipping - not a real device');
-      return;
-    }
+    if (!Device.isDevice) return;
+
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    console.log('Push: existing permission status:', existingStatus);
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-    console.log('Push: final permission status:', finalStatus);
-    if (finalStatus !== 'granted') return;
+
+    if (finalStatus !== 'granted') {
+      Alert.alert('Push Debug', `Permission denied: ${finalStatus}`);
+      return;
+    }
+
     const projectId = '6e01da50-f7de-4634-873b-b257b0c1fe31';
-    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
-    console.log('Push: got token:', tokenData.data);
+    let tokenData;
+    try {
+      tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    } catch (tokenError: any) {
+      Alert.alert('Push Debug', `getExpoPushToken failed: ${tokenError?.message}`);
+      return;
+    }
+
+    Alert.alert('Push Debug', `Token: ${tokenData.data.slice(0, 30)}`);
+
     const response = await fetch('https://app.crusader9.co.uk/api/member/push-token', {
       method: 'POST',
       headers: {
@@ -43,9 +52,10 @@ export async function registerPushToken(authToken: string) {
       },
       body: JSON.stringify({ token: tokenData.data, platform: Platform.OS })
     });
-    console.log('Push: server response:', response.status);
+
+    const responseText = await response.text();
+    Alert.alert('Push server response', `${response.status}: ${responseText}`);
   } catch (e: any) {
-    console.error('Push registration failed:', e?.message ?? e);
-    Alert.alert('Push Debug', e?.message ?? JSON.stringify(e));
+    Alert.alert('Push outer error', e?.message ?? JSON.stringify(e));
   }
 }
