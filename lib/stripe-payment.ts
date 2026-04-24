@@ -21,6 +21,7 @@ export async function payForClass(
       style: 'alwaysDark',
       returnURL: 'crusader9://stripe-success',
       applePay: { merchantCountryCode: 'GB' },
+      googlePay: { merchantCountryCode: 'GB', testEnv: false },
     });
     if (initError) return { success: false, error: initError.message };
 
@@ -57,6 +58,7 @@ export async function payForPT(
       style: 'alwaysDark',
       returnURL: 'crusader9://stripe-success',
       applePay: { merchantCountryCode: 'GB' },
+      googlePay: { merchantCountryCode: 'GB', testEnv: false },
     });
     if (initError) return { success: false, error: initError.message };
 
@@ -92,6 +94,7 @@ export async function payForDayPass(
       style: 'alwaysDark',
       returnURL: 'crusader9://stripe-success',
       applePay: { merchantCountryCode: 'GB' },
+      googlePay: { merchantCountryCode: 'GB', testEnv: false },
     });
     if (initError) return { success: false, error: initError.message };
 
