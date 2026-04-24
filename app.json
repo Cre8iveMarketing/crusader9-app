@@ -33,6 +33,13 @@
       "expo-router",
       "expo-secure-store",
       [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.co.uk.crusader9.app",
+          "enableGooglePay": true
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
