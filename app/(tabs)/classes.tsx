@@ -132,8 +132,11 @@ export default function Classes() {
     if (!bookModal || !selectedCandidate) return;
     const candidate = bookModal.candidates.find(c => c.id === selectedCandidate);
     const forMemberId = candidate?.isSelf ? null : selectedCandidate;
+    const cls = bookModal.cls;
     setBookModal(null);
-    await proceedWithBooking(bookModal.cls, forMemberId);
+    // Wait for iOS to fully dismiss the RN Modal before presenting Stripe
+    await new Promise(resolve => setTimeout(resolve, 350));
+    await proceedWithBooking(cls, forMemberId);
   }
 
   async function handleCancel(cls: any) {
@@ -276,7 +279,7 @@ export default function Classes() {
       </ScrollView>
 
       {/* Who's this class for? Modal */}
-      <Modal visible={!!bookModal} transparent animationType="slide" onRequestClose={() => setBookModal(null)}>
+      <Modal visible={!!bookModal} transparent animationType="none" onRequestClose={() => setBookModal(null)}>
         <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setBookModal(null)}>
           <View style={m.sheet} onStartShouldSetResponder={() => true}>
             <View style={m.header}>

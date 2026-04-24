@@ -167,6 +167,8 @@ export default function Dashboard() {
     const forMemberId = candidate?.isSelf ? null : selectedCandidate;
     const ev = bookModal.ev;
     setBookModal(null);
+    // Wait for iOS to fully dismiss the RN Modal before presenting Stripe
+    await new Promise(resolve => setTimeout(resolve, 350));
     await proceedWithBooking(ev, forMemberId);
   }
 
@@ -343,7 +345,7 @@ export default function Dashboard() {
       </Modal>
 
       {/* Who's this class for? Modal */}
-      <Modal visible={!!bookModal} transparent animationType="slide" onRequestClose={() => setBookModal(null)}>
+      <Modal visible={!!bookModal} transparent animationType="none" onRequestClose={() => setBookModal(null)}>
         <TouchableOpacity style={m.overlay} activeOpacity={1} onPress={() => setBookModal(null)}>
           <View style={m.sheet} onStartShouldSetResponder={() => true}>
             <View style={m.header}>
