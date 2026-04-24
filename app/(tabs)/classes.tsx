@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, RefreshControl, Modal, Image } from 'react-native';
 import { apiFetch, apiPost, apiDelete } from '@/lib/api';
-import { getToken } from '@/lib/auth';
 import { useAuth } from '@/context/AuthContext';
 import { Colors } from '@/constants/colors';
 import { format, addDays, startOfDay } from 'date-fns';
@@ -84,48 +83,47 @@ export default function Classes() {
   async function proceedWithBooking(cls: any, forMemberId: string | null) {
     setActiveClassId(cls.id);
     try {
-      const isPaid = cls.planPrice !== null && cls.planPrice !== undefined && cls.planPrice > 0;
-      if (isPaid) {
-        const bookRes = await apiPost(`/classes/${cls.id}/book`, { pending: true, ...(forMemberId && { forMemberId }) });
-        const intentRes = await apiPost('/stripe/payment-intent', { type: 'class_booking', classId: cls.id, bookingId: bookRes.bookingId });
-        const { error: initError } = await initPaymentSheet({ paymentIntentClientSecret: intentRes.clientSecret, merchantDisplayName: 'Crusader 9 Boxing', style: 'alwaysDark', returnURL: 'crusader9://stripe-success', applePay: { merchantCountryCode: 'GB' } });
-        if (initError) { Alert.alert('Error', initError.message); return; }
+      const targetId = forMemberId ?? member?.memberInternalId ?? member?.id ?? '';
+      const elig = await apiFetch(`/classes/${cls.id}/eligibility?for=${targetId}`);
 
-        let presentSucceeded = false;
-        try {
-          const { error: presentError } = await presentPaymentSheet();
-          if (presentError) {
-            if (presentError.code === 'Canceled' && bookRes?.bookingId) {
-              const token = await getToken();
-              fetch(`https://app.crusader9.co.uk/api/mobile/classes/${cls.id}/booking/${bookRes.bookingId}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` },
-              }).catch(() => {});
-            } else if (presentError.code !== 'Canceled') {
-              Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
-            }
-          } else {
-            presentSucceeded = true;
-          }
-        } catch (e: any) {
-          Alert.alert('Payment error', e?.message ?? String(e));
-        } finally {
-          setActiveClassId(null);
-        }
-        if (!presentSucceeded) return;
-
-        await apiPost('/stripe/confirm-booking', { paymentIntentId: intentRes.clientSecret.split('_secret_')[0], type: 'class_booking', bookingId: bookRes.bookingId });
-        await refreshMember();
-        await load();
-        Alert.alert('Booked!', `Booking confirmed!`);
-      } else {
+      if (elig.eligibleForFree) {
         await apiPost(`/classes/${cls.id}/book`, { ...(forMemberId && { forMemberId }) });
         await refreshMember();
         await load();
         Alert.alert('Booked!', `Booking confirmed!`);
+        return;
       }
-    } catch (e: any) { Alert.alert('Error', e.message || 'Booking failed'); }
-    finally { setActiveClassId(null); }
+
+      const intentRes = await apiPost('/stripe/payment-intent', {
+        type: 'class_booking',
+        classId: cls.id,
+        forMemberId: forMemberId ?? '',
+      });
+      const { error: initError } = await initPaymentSheet({
+        paymentIntentClientSecret: intentRes.clientSecret,
+        merchantDisplayName: 'Crusader 9 Boxing',
+        style: 'alwaysDark',
+        returnURL: 'crusader9://stripe-success',
+        applePay: { merchantCountryCode: 'GB' },
+      });
+      if (initError) { Alert.alert('Error', initError.message); return; }
+
+      const { error: presentError } = await presentPaymentSheet();
+      if (presentError) {
+        if (presentError.code !== 'Canceled') {
+          Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+        }
+        return;
+      }
+
+      await refreshMember();
+      await load();
+      Alert.alert('Booked!', `Booking confirmed!`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Booking failed');
+    } finally {
+      setActiveClassId(null);
+    }
   }
 
   async function handleModalConfirm() {

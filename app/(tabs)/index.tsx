@@ -118,45 +118,45 @@ export default function Dashboard() {
   async function proceedWithBooking(ev: ClassEvent, forMemberId: string | null) {
     setActiveClassId(ev.id);
     try {
-      if (ev.planPrice !== null && ev.planPrice > 0) {
-        const bookRes = await apiPost('/classes/' + ev.id + '/book', { pending: true, ...(forMemberId && { forMemberId }) });
-        const intentRes = await apiPost('/stripe/payment-intent', { type: 'class_booking', classId: ev.id, bookingId: bookRes.bookingId });
-        const { error: initError } = await initPaymentSheet({ paymentIntentClientSecret: intentRes.clientSecret, merchantDisplayName: 'Crusader 9 Boxing', style: 'alwaysDark', returnURL: 'crusader9://stripe-success', applePay: { merchantCountryCode: 'GB' } });
-        if (initError) { showToast(initError.message, false); return; }
+      const targetId = forMemberId ?? (member as any)?.memberInternalId ?? member?.id ?? '';
+      const elig = await apiFetch(`/classes/${ev.id}/eligibility?for=${targetId}`);
 
-        let presentSucceeded = false;
-        try {
-          const { error: presentError } = await presentPaymentSheet();
-          if (presentError) {
-            if (presentError.code === 'Canceled' && bookRes?.bookingId) {
-              const token = await getToken();
-              fetch(`https://app.crusader9.co.uk/api/mobile/classes/${ev.id}/booking/${bookRes.bookingId}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` },
-              }).catch(() => {});
-            } else if (presentError.code !== 'Canceled') {
-              Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
-            }
-          } else {
-            presentSucceeded = true;
-          }
-        } catch (e: any) {
-          Alert.alert('Payment error', e?.message ?? String(e));
-        } finally {
-          setActiveClassId(null);
-        }
-        if (!presentSucceeded) return;
-
-        await apiPost('/stripe/confirm-booking', { paymentIntentId: intentRes.clientSecret.split('_secret_')[0], type: 'class_booking', bookingId: bookRes.bookingId });
-        showToast('Booked!', true);
-        await loadData();
-      } else {
+      if (elig.eligibleForFree) {
         await apiPost('/classes/' + ev.id + '/book', forMemberId ? { forMemberId } : {});
         showToast('Booked!', true);
         await loadData();
+        return;
       }
-    } catch (e: any) { showToast(e.message || 'Booking failed', false); }
-    finally { setActiveClassId(null); }
+
+      const intentRes = await apiPost('/stripe/payment-intent', {
+        type: 'class_booking',
+        classId: ev.id,
+        forMemberId: forMemberId ?? '',
+      });
+      const { error: initError } = await initPaymentSheet({
+        paymentIntentClientSecret: intentRes.clientSecret,
+        merchantDisplayName: 'Crusader 9 Boxing',
+        style: 'alwaysDark',
+        returnURL: 'crusader9://stripe-success',
+        applePay: { merchantCountryCode: 'GB' },
+      });
+      if (initError) { showToast(initError.message, false); return; }
+
+      const { error: presentError } = await presentPaymentSheet();
+      if (presentError) {
+        if (presentError.code !== 'Canceled') {
+          Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
+        }
+        return;
+      }
+
+      showToast('Booked!', true);
+      await loadData();
+    } catch (e: any) {
+      showToast(e.message || 'Booking failed', false);
+    } finally {
+      setActiveClassId(null);
+    }
   }
 
   async function handleModalConfirm() {

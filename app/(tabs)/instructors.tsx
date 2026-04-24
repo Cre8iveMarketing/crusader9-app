@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal, Image } from 'react-native';
-import { apiFetch, apiPost, apiDelete } from '@/lib/api';
-import { getToken } from '@/lib/auth';
+import { apiFetch, apiPost } from '@/lib/api';
 import { Colors } from '@/constants/colors';
 import { format, addDays } from 'date-fns';
 import { useStripe } from '@stripe/stripe-react-native';
@@ -114,16 +113,16 @@ export default function Instructors() {
     setBooking(true);
     try {
       const startsAt = `${selectedDate}T${selectedTime}:00`;
-      const res = await apiPost('/pt-bookings', {
-        instructorId: selected.id,
-        startsAt,
-        durationMins: duration,
-        notes: '',
-        ...(forMemberId && { forMemberId }),
-      });
       const price = duration === 30 && detail?.rate30Min > 0 ? detail.rate30Min : detail?.hourlyRate;
+
       if (price > 0) {
-        const intentRes = await apiPost('/stripe/payment-intent', { type: 'pt_booking', ptBookingId: res.id });
+        const intentRes = await apiPost('/stripe/payment-intent', {
+          type: 'pt_booking',
+          instructorId: selected.id,
+          startsAt,
+          durationMins: duration,
+          forMemberId: forMemberId ?? '',
+        });
         const { error: initError } = await initPaymentSheet({
           paymentIntentClientSecret: intentRes.clientSecret,
           merchantDisplayName: 'Crusader 9 Boxing',
@@ -133,41 +132,24 @@ export default function Instructors() {
         });
         if (initError) { Alert.alert('Error', initError.message); return; }
 
-        let presentSucceeded = false;
-        try {
-          const { error: presentError } = await presentPaymentSheet();
-          if (presentError) {
-            if (presentError.code === 'Canceled' && res?.id) {
-              const token = await getToken();
-              fetch(`https://app.crusader9.co.uk/api/mobile/pt-bookings/${res.id}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` },
-              }).catch(() => {});
-            } else if (presentError.code !== 'Canceled') {
-              Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
-            }
-          } else {
-            presentSucceeded = true;
+        const { error: presentError } = await presentPaymentSheet();
+        if (presentError) {
+          if (presentError.code !== 'Canceled') {
+            Alert.alert('Payment failed', `code=${presentError.code} message=${presentError.message}`);
           }
-        } catch (e: any) {
-          Alert.alert('Payment error', e?.message ?? String(e));
-        } finally {
-          setBooking(false);
+          return;
         }
-        if (!presentSucceeded) return;
 
-        await apiPost('/stripe/confirm-booking', {
-          paymentIntentId: intentRes.clientSecret.split('_secret_')[0],
-          type: 'pt_booking',
-          ptBookingId: res.id,
-        });
         Alert.alert('Booked!', 'Your PT session has been booked and paid.');
       } else {
         Alert.alert('Request Sent!', 'Your PT session request has been sent.');
       }
       setSelected(null); setDetail(null); setSelectedDate(''); setSelectedTime(''); setSlots([]);
-    } catch (e: any) { Alert.alert('Error', e.message); }
-    finally { setBooking(false); }
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setBooking(false);
+    }
   }
 
   async function handlePtModalConfirm() {
