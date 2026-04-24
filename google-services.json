@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "997085008366",
+    "project_id": "crusader9-38b58",
+    "storage_bucket": "crusader9-38b58.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:997085008366:android:c0420e0665eaec3edabeff",
+        "android_client_info": {
+          "package_name": "co.uk.crusader9.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDErrR5wSAXF0Cq-weFjwoo9hLNULgPyIw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
