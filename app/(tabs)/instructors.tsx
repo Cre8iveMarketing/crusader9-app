@@ -159,6 +159,8 @@ export default function Instructors() {
     const candidate = ptModal?.candidates.find((c: any) => c.id === ptSelectedCandidate);
     const forMemberId = candidate?.isSelf ? null : ptSelectedCandidate;
     setPtModal(null);
+    // Wait for iOS to fully dismiss the RN Modal before presenting Stripe
+    await new Promise(resolve => setTimeout(resolve, 350));
     await proceedWithPtBooking(forMemberId);
   }
 
@@ -315,7 +317,7 @@ export default function Instructors() {
       )}
 
       {/* Who's this PT session for? Modal */}
-      <Modal visible={!!ptModal} transparent animationType="slide" onRequestClose={() => setPtModal(null)}>
+      <Modal visible={!!ptModal} transparent animationType="none" onRequestClose={() => setPtModal(null)}>
         <TouchableOpacity style={pm.overlay} activeOpacity={1} onPress={() => setPtModal(null)}>
           <View style={pm.sheet} onStartShouldSetResponder={() => true}>
             <View style={pm.header}>
