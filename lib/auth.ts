@@ -18,7 +18,6 @@ export async function deleteToken() {
 }
 
 export async function registerPushToken(authToken: string) {
-  Alert.alert('registerPushToken called', 'starting...');
   try {
     if (!Device.isDevice) {
       console.log('Push: skipping - not a real device');

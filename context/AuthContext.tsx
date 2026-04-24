@@ -43,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!token) { setLoading(false); return; }
       const data = await apiFetch('/me');
       setMember(data);
+      registerPushToken(token).catch(() => {});
     } catch {
       await deleteToken();
     } finally {
