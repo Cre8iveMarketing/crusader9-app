@@ -265,7 +265,7 @@ export default function Plans() {
       if (plan.planType === 'DAY_PASS') {
         if (!dates || dates.length === 0) { Alert.alert('Select dates', 'Please select at least one date'); return; }
         const intentRes = await apiPost('/stripe/payment-intent', { type: 'day_pass', dates, ...(forMemberId && { forMemberId }) });
-        const { error: initError } = await initPaymentSheet({ paymentIntentClientSecret: intentRes.clientSecret, merchantDisplayName: 'Crusader 9 Boxing', style: 'alwaysDark', returnURL: 'crusader9://stripe-success', applePay: { merchantCountryCode: 'GB' }, googlePay: { merchantCountryCode: 'GB', testEnv: true } });
+        const { error: initError } = await initPaymentSheet({ paymentIntentClientSecret: intentRes.clientSecret, merchantDisplayName: 'Crusader 9 Boxing', style: 'alwaysDark', returnURL: 'crusader9://stripe-success', applePay: { merchantCountryCode: 'GB' }, googlePay: { merchantCountryCode: 'GB', testEnv: false } });
         if (initError) { Alert.alert('Error', initError.message); return; }
         const { error: presentError } = await presentPaymentSheet();
         if (presentError) { if (presentError.code !== 'Canceled') Alert.alert('Payment failed', presentError.message); return; }
