@@ -142,6 +142,8 @@ export default function Dashboard() {
       });
       if (initError) { showToast(initError.message, false); return; }
 
+      setActiveClassId(null);
+
       const { error: presentError } = await presentPaymentSheet();
       if (presentError) {
         if (presentError.code !== 'Canceled') {

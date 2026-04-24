@@ -132,6 +132,8 @@ export default function Instructors() {
         });
         if (initError) { Alert.alert('Error', initError.message); return; }
 
+        setBooking(false);
+
         const { error: presentError } = await presentPaymentSheet();
         if (presentError) {
           if (presentError.code !== 'Canceled') {

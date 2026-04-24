@@ -108,6 +108,8 @@ export default function Classes() {
       });
       if (initError) { Alert.alert('Error', initError.message); return; }
 
+      setActiveClassId(null);
+
       const { error: presentError } = await presentPaymentSheet();
       if (presentError) {
         if (presentError.code !== 'Canceled') {
