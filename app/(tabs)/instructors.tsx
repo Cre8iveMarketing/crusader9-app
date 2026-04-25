@@ -129,7 +129,7 @@ export default function Instructors() {
           style: 'alwaysDark',
           returnURL: 'crusader9://stripe-success',
           applePay: { merchantCountryCode: 'GB' },
-          googlePay: { merchantCountryCode: 'GB', testEnv: true },
+          googlePay: { merchantCountryCode: 'GB', currencyCode: 'GBP', testEnv: true },
         });
         if (initError) { Alert.alert('Error', initError.message); return; }
 
