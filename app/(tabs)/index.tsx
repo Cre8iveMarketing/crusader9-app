@@ -139,7 +139,7 @@ export default function Dashboard() {
         style: 'alwaysDark',
         returnURL: 'crusader9://stripe-success',
         applePay: { merchantCountryCode: 'GB' },
-        googlePay: { merchantCountryCode: 'GB', testEnv: false },
+        googlePay: { merchantCountryCode: 'GB', testEnv: true },
       });
       if (initError) { showToast(initError.message, false); return; }
 

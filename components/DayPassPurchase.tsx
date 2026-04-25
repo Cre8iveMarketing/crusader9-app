@@ -119,7 +119,7 @@ export function DayPassPurchase({ gymSchedule, closedDates, forMemberId, showFam
         style: 'alwaysDark',
         returnURL: 'crusader9://stripe-success',
         applePay: { merchantCountryCode: 'GB' },
-        googlePay: { merchantCountryCode: 'GB', testEnv: false },
+        googlePay: { merchantCountryCode: 'GB', testEnv: true },
       });
       if (initError) { Alert.alert('Error', initError.message); return; }
       const { error: presentError } = await presentPaymentSheet();
