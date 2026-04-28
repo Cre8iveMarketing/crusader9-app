@@ -1,10 +1,11 @@
 import { useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Platform, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Platform, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/lib/api';
+import { getToken } from '@/lib/auth';
 import { useState } from 'react';
 import { Colors } from '@/constants/colors';
 import { format } from 'date-fns';
@@ -32,6 +33,38 @@ export default function ProfileMenu() {
   }
 
   useFocusEffect(useCallback(() => { loadMe(); }, []));
+
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure?\n\nYour profile, photo, and personal details will be permanently deleted. Booking history and payment records are retained for 7 years as required by law.\n\nThis cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const token = await getToken();
+              if (!token) throw new Error('Not signed in');
+              const res = await fetch('https://app.crusader9.co.uk/api/member/delete-account', {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!res.ok) {
+                const body = await res.text();
+                throw new Error(body || `Server error ${res.status}`);
+              }
+              await logout();
+              router.replace('/(auth)/login');
+            } catch (e: any) {
+              Alert.alert('Error', e?.message ?? 'Could not delete account. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  }
 
   async function onRefresh() { setRefreshing(true); await loadMe(); setRefreshing(false); }
 
@@ -85,7 +118,6 @@ export default function ProfileMenu() {
 
       {/* Sign out */}
       <TouchableOpacity style={s.signOutBtn} onPress={() => {
-        const { Alert } = require('react-native');
         Alert.alert('Sign Out', 'Are you sure?', [
           { text: 'Cancel' },
           { text: 'Sign Out', style: 'destructive', onPress: async () => {
@@ -95,6 +127,11 @@ export default function ProfileMenu() {
         ]);
       }}>
         <Text style={s.signOutText}>Sign Out</Text>
+      </TouchableOpacity>
+
+      {/* Delete account */}
+      <TouchableOpacity style={s.deleteAccountBtn} onPress={handleDeleteAccount}>
+        <Text style={s.deleteAccountText}>Delete Account</Text>
       </TouchableOpacity>
 
       </ScrollView>
@@ -127,4 +164,6 @@ const s = StyleSheet.create({
   chevron: { color: '#3f3f46', fontSize: 22, fontWeight: '300' },
   signOutBtn: { borderWidth: 1, borderColor: '#3f3f46', padding: 16, borderRadius: 12, alignItems: 'center' },
   signOutText: { color: '#ef4444', fontWeight: '700', fontSize: 15 },
+  deleteAccountBtn: { paddingVertical: 12, alignItems: 'center' },
+  deleteAccountText: { color: '#71717a', fontSize: 13, textDecorationLine: 'underline' },
 });
